@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "extensions": [
+    {
+      "name": "todo",
+      "path": "~/.pi/agent/extensions/todo.ts",
+      "lifecycle": "lazy",
+      "description": "Task management - create, list, and track todos",
+      "toolSummary": ["todo_list", "todo_add", "todo_complete"],
+      "tags": ["productivity", "tasks"]
+    },
+    {
+      "name": "snake",
+      "path": "~/.pi/agent/extensions/snake.ts",
+      "lifecycle": "lazy",
+      "description": "Snake game while you wait",
+      "tags": ["fun"]
+    },
+    {
+      "name": "git-checkpoint",
+      "path": "~/.pi/agent/extensions/git-checkpoint.ts",
+      "lifecycle": "eager",
+      "description": "Auto git stash/restore on each turn"
+    }
+  ],
+  "settings": {
+    "idleTimeout": 10
+  }
+}

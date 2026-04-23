@@ -1,0 +1,40 @@
+{
+  "name": "pi-lazy-extensions",
+  "version": "0.1.0",
+  "description": "Lazy-load pi extensions on demand via a ToolSearch-style proxy tool",
+  "type": "module",
+  "license": "MIT",
+  "author": "Nico Bailon",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "lazy",
+    "extension",
+    "coding-agent",
+    "tool-search"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "files": [
+    "index.ts",
+    "config.ts",
+    "registry.ts",
+    "proxy-modes.ts",
+    "types.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "typebox": "^1.1.24"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
