@@ -13,7 +13,7 @@
 import type { ExtensionAPI, ToolInfo } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { loadManifest, buildState, getEagerExtensions } from "./config.js";
-import { activateExtension, buildProxyDescription, clearAllTimers } from "./registry.js";
+import { activateExtension, buildProxyDescription, clearAllTimers, touchExtension } from "./registry.js";
 import { executeStatus, executeSearch, executeActivate, executeListTools } from "./proxy-modes.js";
 import type { LazyExtensionsState } from "./types.js";
 
@@ -26,8 +26,9 @@ export default function lazyExtensions(pi: ExtensionAPI) {
 
   // Pre-load manifest at extension load time (before session_start)
   // so the proxy tool description can include the extension list.
-  const agentDir = process.env.PI_AGENT_DIR ?? `${process.env.HOME}/.pi/agent`;
+  const agentDir = process.env.PI_AGENT_DIR ?? process.env.PI_CODING_AGENT_DIR ?? `${process.env.HOME}/.pi/agent`;
   const earlyResult = loadManifest(process.cwd(), agentDir);
+  const disableProxyTool = earlyResult?.manifest.settings?.disableProxyTool ?? false;
   const earlyDescription = earlyResult
     ? buildProxyDescription(buildState(earlyResult.manifest, earlyResult.path))
     : "Extension gateway - discover, search, and activate extensions on demand. Create a lazy-extensions.json to configure.";
@@ -108,6 +109,17 @@ export default function lazyExtensions(pi: ExtensionAPI) {
     initPromise = null;
   });
 
+  // Reset idle timers when lazy extension tools are used
+  pi.on("tool_execution_end", async (event) => {
+    if (!state) return;
+    for (const [name, extState] of state.extensions) {
+      if (extState.loaded && extState.registeredTools.includes(event.toolName)) {
+        touchExtension(name, state);
+        break;
+      }
+    }
+  });
+
   pi.registerCommand("ext", {
     description: "Show lazy extensions status",
     handler: async (args, ctx) => {
@@ -164,44 +176,46 @@ export default function lazyExtensions(pi: ExtensionAPI) {
   });
 
   // Register the proxy tool — the LLM's entry point for discovering and activating extensions
-  // @ts-ignore - Type.Object causes excessive type instantiation with typebox
-  pi.registerTool({
-    name: "ext",
-    label: "Extension Gateway",
-    description: earlyDescription,
-    promptSnippet: "Discover and activate lazy-loaded extensions",
-    promptGuidelines: [
-      "Use ext to discover and activate extensions before using their tools.",
-      "If a tool you need is not available, search ext({ search: \"...\" }) for an extension that provides it.",
-      "After activating an extension with ext({ activate: \"name\" }), its tools become immediately available.",
-    ],
-    parameters: Type.Object({
-      search: Type.Optional(Type.String({ description: "Search extensions by name, description, tags, or tool names" })),
-      activate: Type.Optional(Type.String({ description: "Activate (load) an extension by name" })),
-      tools: Type.Optional(Type.String({ description: "List tools for a specific extension (or omit for all active)" })),
-      regex: Type.Optional(Type.Boolean({ description: "Treat search as regex (default: substring match)" })),
-    }),
-    async execute(_toolCallId: string, params: { search?: string; activate?: string; tools?: string; regex?: boolean }, _signal: any, _onUpdate: any, _ctx: any) {
-      // Wait for init if still running
-      if (initPromise) await initPromise;
+  if (!disableProxyTool) {
+    // @ts-ignore - Type.Object causes excessive type instantiation with typebox
+    pi.registerTool({
+      name: "ext",
+      label: "Extension Gateway",
+      description: earlyDescription,
+      promptSnippet: "Discover and activate lazy-loaded extensions",
+      promptGuidelines: [
+        "Use ext to discover and activate extensions before using their tools.",
+        "If a tool you need is not available, search ext({ search: \"...\" }) for an extension that provides it.",
+        "After activating an extension with ext({ activate: \"name\" }), its tools become immediately available.",
+      ],
+      parameters: Type.Object({
+        search: Type.Optional(Type.String({ description: "Search extensions by name, description, tags, or tool names" })),
+        activate: Type.Optional(Type.String({ description: "Activate (load) an extension by name" })),
+        tools: Type.Optional(Type.String({ description: "List tools for a specific extension (or omit for all active)" })),
+        regex: Type.Optional(Type.Boolean({ description: "Treat search as regex (default: substring match)" })),
+      }),
+      async execute(_toolCallId: string, params: { search?: string; activate?: string; tools?: string; regex?: boolean }, _signal: any, _onUpdate: any, _ctx: any) {
+        // Wait for init if still running
+        if (initPromise) await initPromise;
 
-      if (!state) {
-        return {
-          content: [{ type: "text" as const, text: "No lazy extensions configured. Create a lazy-extensions.json manifest." }],
-          details: { error: "not_configured" },
-        };
-      }
+        if (!state) {
+          return {
+            content: [{ type: "text" as const, text: "No lazy extensions configured. Create a lazy-extensions.json manifest." }],
+            details: { error: "not_configured" },
+          };
+        }
 
-      if (params.activate) {
-        return executeActivate(state, params.activate, pi) as any;
-      }
-      if (params.search) {
-        return executeSearch(state, params.search, params.regex) as any;
-      }
-      if (params.tools !== undefined) {
-        return executeListTools(state, params.tools || undefined, getPiTools) as any;
-      }
-      return executeStatus(state) as any;
-    },
-  });
+        if (params.activate) {
+          return executeActivate(state, params.activate, pi) as any;
+        }
+        if (params.search) {
+          return executeSearch(state, params.search, params.regex) as any;
+        }
+        if (params.tools !== undefined) {
+          return executeListTools(state, params.tools || undefined, getPiTools) as any;
+        }
+        return executeStatus(state) as any;
+      },
+    });
+  }
 }

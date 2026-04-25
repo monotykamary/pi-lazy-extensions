@@ -184,8 +184,8 @@ function idleUnloadExtension(name: string, state: LazyExtensionsState, pi: Exten
   const extState = state.extensions.get(name);
   if (!extState || !extState.loaded) return;
 
-  // Remove this extension's tools from the active set
-  const activeTools = (pi.getActiveTools() as any[]).map(t => t.name as string);
+  // getActiveTools() returns string[] (tool names)
+  const activeTools = pi.getActiveTools();
   const remaining = activeTools.filter(t => !extState.registeredTools.includes(t));
   pi.setActiveTools(remaining);
 

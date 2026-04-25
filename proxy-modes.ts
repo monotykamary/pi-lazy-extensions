@@ -210,6 +210,9 @@ export function executeListTools(
 ): ProxyToolResult {
   if (extensionName) {
     const extState = state.extensions.get(extensionName);
+    if (extState?.loaded) {
+      touchExtension(extensionName, state);
+    }
     if (!extState) {
       return {
         content: [{ type: "text", text: `Extension "${extensionName}" not found.` }],
