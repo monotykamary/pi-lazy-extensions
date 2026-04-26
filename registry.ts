@@ -8,8 +8,8 @@
  * - Deduplication guards
  */
 
-import type { ExtensionAPI, ToolInfo } from "@mariozechner/pi-coding-agent";
-import type { ActivationResult, LazyExtensionsState, LoadedExtensionState } from "./types.js";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ActivationResult, LazyExtensionsState } from "./types.js";
 import { resolveExtensionPath } from "./config.js";
 
 const FAILURE_BACKOFF_MS = 60 * 1000;
@@ -33,6 +33,7 @@ export async function activateExtension(
   }
 
   if (extState.loaded) {
+    touchExtension(name, state);
     return {
       success: true,
       name,
@@ -41,6 +42,36 @@ export async function activateExtension(
     };
   }
 
+  // --- Reactivation path (previously loaded, idle-unloaded) ---
+  // Calling factory(pi) again would double-register event handlers (bug).
+  // Instead, restore the already-registered tools to the active set.
+  if (extState.registeredTools.length > 0) {
+    const currentActive = new Set(pi.getActiveTools());
+    const restored: string[] = [];
+    for (const toolName of extState.registeredTools) {
+      if (!currentActive.has(toolName)) {
+        restored.push(toolName);
+      }
+    }
+    if (restored.length > 0) {
+      pi.setActiveTools([...currentActive, ...restored]);
+    }
+
+    extState.loaded = true;
+    extState.lastActivated = Date.now();
+    extState.lastUsed = Date.now();
+    extState.error = undefined;
+    scheduleIdleTimeout(name, state, pi);
+
+    return {
+      success: true,
+      name,
+      tools: extState.registeredTools,
+      commands: extState.registeredCommands,
+    };
+  }
+
+  // --- First-time activation path ---
   // Check failure backoff
   const failedAgo = getFailureAgeSeconds(name);
   if (failedAgo !== null) {
@@ -51,20 +82,12 @@ export async function activateExtension(
     };
   }
 
-  // Snapshot current tools/commands to diff after load
+  // Snapshot current tools to diff after load
   const toolsBefore = new Set(pi.getAllTools().map((t: any) => t.name as string));
 
   const extPath = resolveExtensionPath(extState.config.path, state.baseDir);
 
   try {
-    // Use jiti-compatible dynamic import.
-    // jiti handles .ts transpilation at runtime, but when pi runs as a Bun binary
-    // the extension modules need virtualModules resolution. Using the same
-    // import() path that jiti would use is the safest approach.
-    //
-    // For extensions that are already in pi's auto-discovery paths,
-    // jiti has already loaded them. For extensions outside those paths,
-    // we rely on Node/Bun's native module resolution plus jiti's .ts support.
     const mod = await import(extPath);
 
     if (typeof mod.default !== "function") {
@@ -178,21 +201,22 @@ function scheduleIdleTimeout(name: string, state: LazyExtensionsState, pi: Exten
  *
  * Full unloading (removing event handlers) isn't possible with the current
  * ExtensionAPI. We remove the extension's tools from the active set and
- * mark it as unloaded. A subsequent activation will re-register them.
+ * mark it as unloaded. A subsequent activation restores tools to the
+ * active set without re-calling factory(pi) (avoiding double handlers).
  */
 function idleUnloadExtension(name: string, state: LazyExtensionsState, pi: ExtensionAPI): void {
   const extState = state.extensions.get(name);
   if (!extState || !extState.loaded) return;
 
-  // getActiveTools() returns string[] (tool names)
+  // Remove tools from the active set so the LLM can no longer call them.
+  // Keep extState.registeredTools intact so reactivation can restore them
+  // without re-calling factory(pi) (which would double-register event handlers).
   const activeTools = pi.getActiveTools();
   const remaining = activeTools.filter(t => !extState.registeredTools.includes(t));
   pi.setActiveTools(remaining);
 
   extState.loaded = false;
   extState.lastActivated = undefined;
-  extState.registeredTools = [];
-  extState.registeredCommands = [];
 }
 
 /**

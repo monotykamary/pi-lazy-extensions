@@ -7,7 +7,7 @@
 
 import type { AgentToolResult, ToolInfo } from "@mariozechner/pi-coding-agent";
 import type { LazyExtensionsState } from "./types.js";
-import { activateExtension, buildProxyDescription, touchExtension, getFailureAgeSeconds } from "./registry.js";
+import { activateExtension, touchExtension, getFailureAgeSeconds } from "./registry.js";
 
 type ProxyToolResult = AgentToolResult<Record<string, unknown>>;
 
@@ -221,12 +221,16 @@ export function executeListTools(
     }
 
     if (!extState.loaded) {
-      const summary = extState.config.toolSummary?.length
-        ? ` Known tools (not yet loaded): ${extState.config.toolSummary.join(", ")}`
+      // Show preserved tools if previously loaded, otherwise manifest toolSummary
+      const knownTools = extState.registeredTools.length > 0
+        ? extState.registeredTools
+        : extState.config.toolSummary;
+      const summary = knownTools?.length
+        ? ` Known tools: ${knownTools.join(", ")}`
         : " Use ext({ activate: \"" + extensionName + "\" }) to load it first.";
       return {
         content: [{ type: "text", text: `Extension "${extensionName}" is not active.${summary}` }],
-        details: { mode: "list", extensionName, loaded: false, toolSummary: extState.config.toolSummary },
+        details: { mode: "list", extensionName, loaded: false, toolSummary: knownTools ?? extState.config.toolSummary },
       };
     }
 
