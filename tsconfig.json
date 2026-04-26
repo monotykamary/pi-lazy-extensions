@@ -1,16 +1,15 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
     "esModuleInterop": true,
     "strict": false,
     "skipLibCheck": true,
-    "paths": {
-      "@mariozechner/pi-coding-agent": ["/Users/monotykamary/.npm-global/lib/node_modules/@mariozechner/pi-coding-agent/dist/index.d.ts"]
-    },
     "noEmit": true,
     "resolveJsonModule": true
   },
-  "include": ["*.ts"]
+  "include": ["./**/*.ts"],
+  "exclude": ["node_modules", "tests"]
 }

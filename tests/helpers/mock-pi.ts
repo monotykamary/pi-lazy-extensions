@@ -10,8 +10,8 @@ import type {
   LazyExtensionConfig,
   LazyExtensionsManifest,
   LazyExtensionsState,
-} from "./types.js";
-import { buildState } from "./config.js";
+} from "../../types.js";
+import { buildState } from "../../config.js";
 
 // ---------------------------------------------------------------------------
 // Mock ExtensionAPI
@@ -30,6 +30,8 @@ export interface MockPi extends ExtensionAPI {
   _activeTools: Set<string>;
   _setActiveToolsCalls: string[][];
   _registeredTools: string[];
+  _eventHandlers: Map<string, Array<(...args: any[]) => void>>;
+  _commandHandlers: Array<{ name: string; config: any }>;
 }
 
 const DEFAULT_BUILTIN_TOOLS: ToolInfo[] = [
@@ -60,21 +62,24 @@ const DEFAULT_BUILTIN_TOOLS: ToolInfo[] = [
 ];
 
 const noop = () => {};
-const noopAsync = async () => {};
-const noopHandler = () => {};
-const stub = () => {
-  throw new Error("stub not implemented in mock");
-};
 
 export function createMockPi(opts: MockPiOptions = {}): MockPi {
   const toolRegistry: ToolInfo[] = [...(opts.tools ?? DEFAULT_BUILTIN_TOOLS)];
   const activeTools = new Set<string>(opts.activeTools ?? toolRegistry.map((t) => t.name));
+
+  // Event handler storage — tests can retrieve and fire handlers
+  const eventHandlers = new Map<string, Array<(...args: any[]) => void>>();
+  const commandHandlers: Array<{ name: string; config: any }> = [];
 
   const mock: MockPi = {
     _toolRegistry: toolRegistry,
     _activeTools: activeTools,
     _setActiveToolsCalls: [],
     _registeredTools: [],
+
+    // Exposed for tests to introspect
+    _eventHandlers: eventHandlers,
+    _commandHandlers: commandHandlers,
 
     // --- Tool management ---
     getAllTools(): ToolInfo[] {
@@ -107,30 +112,37 @@ export function createMockPi(opts: MockPiOptions = {}): MockPi {
       }
     },
 
-    // --- Event subscriptions (no-op in mock) ---
-    on: ((_event: string, _handler: any) => {}) as any,
+    // --- Event subscriptions — capture handlers by event name ---
+    on(event: string, handler: any) {
+      if (!eventHandlers.has(event)) eventHandlers.set(event, []);
+      eventHandlers.get(event)!.push(handler);
+    },
+
+    // --- Command registration — capture name and config ---
+    registerCommand(name: string, config: any) {
+      commandHandlers.push({ name, config });
+    },
 
     // --- Stubs for methods not exercised by these tests ---
-    registerCommand: stub as any,
-    registerShortcut: stub as any,
-    registerFlag: stub as any,
-    getFlag: stub as any,
-    registerMessageRenderer: stub as any,
-    sendMessage: stub as any,
-    sendUserMessage: stub as any,
-    appendEntry: stub as any,
-    setSessionName: stub as any,
-    getSessionName: stub as any,
-    setLabel: stub as any,
-    exec: stub as any,
-    getCommands: stub as any,
-    setModel: stub as any,
-    getThinkingLevel: stub as any,
-    setThinkingLevel: stub as any,
-    registerProvider: stub as any,
-    unregisterProvider: stub as any,
+    registerShortcut: noop as any,
+    registerFlag: noop as any,
+    getFlag: noop as any,
+    registerMessageRenderer: noop as any,
+    sendMessage: noop as any,
+    sendUserMessage: noop as any,
+    appendEntry: noop as any,
+    setSessionName: noop as any,
+    getSessionName: noop as any,
+    setLabel: noop as any,
+    exec: noop as any,
+    getCommands: noop as any,
+    setModel: noop as any,
+    getThinkingLevel: noop as any,
+    setThinkingLevel: noop as any,
+    registerProvider: noop as any,
+    unregisterProvider: noop as any,
     events: {} as any,
-  };
+  } as MockPi;
 
   return mock;
 }

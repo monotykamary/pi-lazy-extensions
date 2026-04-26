@@ -34,11 +34,19 @@
     "@mariozechner/pi-coding-agent": "*"
   },
   "scripts": {
-    "test": "node --import tsx --test registry.test.ts"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint:dead": "knip --no-gitignore"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.5.2",
+    "@commitlint/config-conventional": "^20.5.0",
     "@types/node": "^20.0.0",
-    "tsx": "^4.21.0",
-    "typescript": "^5.0.0"
+    "@vitest/coverage-v8": "^4.1.5",
+    "knip": "^6.7.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.5"
   }
 }
