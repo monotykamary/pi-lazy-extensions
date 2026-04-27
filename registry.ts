@@ -41,7 +41,10 @@ export async function activateExtension(
   // --- Reactivation path (previously loaded, idle-unloaded) ---
   // Calling factory(pi) again would double-register event handlers (bug).
   // Instead, restore the already-registered tools to the active set.
-  if (extState.registeredTools.length > 0) {
+  // Use factoryCalled (not registeredTools.length) as the gate so that
+  // extensions registering zero tools don't fall through to a double
+  // factory(pi) call.
+  if (extState.factoryCalled) {
     const currentActive = new Set(pi.getActiveTools());
     const restored: string[] = [];
     for (const toolName of extState.registeredTools) {
@@ -132,6 +135,7 @@ async function performActivation(
     extState.registeredCommands = newCommands;
 
     extState.loaded = true;
+    extState.factoryCalled = true;
     extState.lastActivated = Date.now();
     extState.lastUsed = Date.now();
     extState.error = undefined;

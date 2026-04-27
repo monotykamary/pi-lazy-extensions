@@ -70,6 +70,9 @@ export interface LoadedExtensionState {
   /** Whether the extension has been loaded into the runtime. */
   loaded: boolean;
 
+  /** Whether the factory has been called at least once (prevents double event handlers). */
+  factoryCalled: boolean;
+
   /** Timestamp when the extension was last activated. */
   lastActivated?: number;
 

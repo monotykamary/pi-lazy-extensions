@@ -10,7 +10,7 @@
  *   3. The `ext` proxy tool lets the LLM discover and activate extensions
  */
 
-import type { ExtensionAPI, ToolInfo } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { loadManifest, buildState, getEagerExtensions } from "./config.js";
 import { activateExtension, clearAllTimers, touchExtension } from "./registry.js";
@@ -27,7 +27,7 @@ export default function lazyExtensions(pi: ExtensionAPI) {
   let initPromise: Promise<void> | null = null;
   let lifecycleGeneration = 0;
 
-  const getPiTools = (): ToolInfo[] => pi.getAllTools() as any;
+  const getPiTools = (): ToolInfo[] => pi.getAllTools();
   const agentDir = process.env.PI_AGENT_DIR ?? process.env.PI_CODING_AGENT_DIR ?? `${process.env.HOME}/.pi/agent`;
 
   pi.on("session_start", async (_event, ctx) => {
@@ -114,7 +114,7 @@ export default function lazyExtensions(pi: ExtensionAPI) {
   });
 
   // Reset idle timers when lazy extension tools are used
-  pi.on("tool_execution_end", async (event) => {
+  pi.on("tool_execution_end", (event) => {
     if (!state) return;
     for (const [name, extState] of state.extensions) {
       if (extState.loaded && extState.registeredTools.includes(event.toolName)) {
@@ -160,19 +160,19 @@ export default function lazyExtensions(pi: ExtensionAPI) {
             return;
           }
           const result = executeSearch(state, query);
-          if (ctx.hasUI) ctx.ui.notify((result.content[0] as any)?.text ?? "No results", "info");
+          if (ctx.hasUI) ctx.ui.notify(result.content[0]?.text ?? "No results", "info");
           break;
         }
         case "tools": {
           const result = executeListTools(state, target, getPiTools);
-          if (ctx.hasUI) ctx.ui.notify((result.content[0] as any)?.text ?? "No tools", "info");
+          if (ctx.hasUI) ctx.ui.notify(result.content[0]?.text ?? "No tools", "info");
           break;
         }
         case "status":
         case "":
         default: {
           const result = executeStatus(state);
-          if (ctx.hasUI) ctx.ui.notify((result.content[0] as any)?.text ?? "No status", "info");
+          if (ctx.hasUI) ctx.ui.notify(result.content[0]?.text ?? "No status", "info");
           break;
         }
       }
@@ -199,7 +199,7 @@ export default function lazyExtensions(pi: ExtensionAPI) {
       tools: Type.Optional(Type.String({ description: "List tools for a specific extension (or omit for all active)" })),
       regex: Type.Optional(Type.Boolean({ description: "Treat search as regex (default: substring match)" })),
     }),
-    async execute(_toolCallId: string, params: { search?: string; activate?: string; tools?: string; regex?: boolean }, _signal: any, _onUpdate: any, _ctx: any) {
+    async execute(_toolCallId: string, params: { search?: string; activate?: string; tools?: string; regex?: boolean }, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: ExtensionContext) {
       // Wait for init if still running
       if (initPromise) await initPromise;
 

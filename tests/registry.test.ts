@@ -308,6 +308,7 @@ describe("reactivation after idle-unload", () => {
     pi.setActiveTools(active.filter((t) => t !== "idle_tool"));
     extState.loaded = false;
     extState.lastActivated = undefined;
+    // factoryCalled remains true — factory must not be called again
     // registeredTools preserved (the fix)
 
     expect(extState.loaded).toBe(false);
@@ -341,6 +342,7 @@ describe("reactivation after idle-unload", () => {
     const extState = s.extensions.get("already-active-ext")!;
     extState.loaded = false;
     extState.lastActivated = undefined;
+    // factoryCalled remains true (factory was already called)
 
     const r2 = await activateExtension("already-active-ext", s, pi as any);
     expect(r2.success).toBe(true);
@@ -382,6 +384,7 @@ describe("full lifecycle", () => {
     pi.setActiveTools(pi.getActiveTools().filter((t) => t !== "lifecycle_tool"));
     extState.loaded = false;
     extState.lastActivated = undefined;
+    // factoryCalled stays true
 
     expect(extState.loaded).toBe(false);
     expect(extState.registeredTools).toEqual(savedTools);
@@ -397,6 +400,7 @@ describe("full lifecycle", () => {
     // Cycle 2 — idle-unload
     pi.setActiveTools(pi.getActiveTools().filter((t) => t !== "lifecycle_tool"));
     extState.loaded = false;
+    // factoryCalled stays true
 
     // Cycle 3 — reactivate again
     const r3 = await activateExtension("lifecycle-ext", s, pi as any);

@@ -123,6 +123,7 @@ export function buildState(
     extensions.set(config.name, {
       config,
       loaded: false,
+      factoryCalled: false,
       registeredTools: [],
       registeredCommands: [],
     });

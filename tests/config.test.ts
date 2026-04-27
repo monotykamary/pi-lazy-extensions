@@ -226,6 +226,7 @@ describe("buildState", () => {
     expect(s.extensions.size).toBe(2);
     for (const [, extState] of s.extensions) {
       expect(extState.loaded).toBe(false);
+      expect(extState.factoryCalled).toBe(false);
       expect(extState.registeredTools).toEqual([]);
       expect(extState.registeredCommands).toEqual([]);
       expect(extState.lastActivated).toBeUndefined();
