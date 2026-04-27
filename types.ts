@@ -87,6 +87,9 @@ export interface LoadedExtensionState {
 
   /** Timer for idle unloading, if applicable. */
   idleTimer?: ReturnType<typeof setTimeout>;
+
+  /** In-flight activation promise to deduplicate concurrent activations. */
+  activationPromise?: Promise<ActivationResult>;
 }
 
 /** The overall runtime state for the lazy extensions proxy. */
@@ -102,6 +105,9 @@ export interface LazyExtensionsState {
 
   /** Base directory for resolving relative paths. */
   baseDir: string;
+
+  /** Tracks recent activation failures to enforce backoff. */
+  failureTracker: Map<string, number>;
 }
 
 /** Result of activating an extension. */

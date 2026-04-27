@@ -2,6 +2,6 @@
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "entry": ["index.ts"],
   "ignoreExportsUsedInFile": true,
-  "ignoreDependencies": ["@commitlint/cli"],
+  "ignoreDependencies": ["@commitlint/cli", "@mariozechner/jiti"],
   "ignore": []
 }

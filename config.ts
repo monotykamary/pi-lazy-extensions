@@ -128,7 +128,7 @@ export function buildState(
     });
   }
 
-  return { extensions, manifest, manifestPath, baseDir };
+  return { extensions, manifest, manifestPath, baseDir, failureTracker: new Map() };
 }
 
 /**

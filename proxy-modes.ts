@@ -25,7 +25,7 @@ export function executeStatus(state: LazyExtensionsState): ProxyToolResult {
       status = "active";
     } else if (extState.error) {
       status = "failed";
-    } else if (getFailureAgeSeconds(name) !== null) {
+    } else if (getFailureAgeSeconds(state, name) !== null) {
       status = "failed";
     }
     entries.push({ name, status, lifecycle, toolCount, error: extState.error });

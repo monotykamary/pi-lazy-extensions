@@ -8,7 +8,6 @@ import {
   touchExtension,
   getFailureAgeSeconds,
   clearAllTimers,
-  buildProxyDescription,
 } from "../registry.js";
 
 import {
@@ -159,7 +158,7 @@ describe("activateExtension", () => {
     const result = await activateExtension("fail-ext", s, pi as any);
     expect(result.success).toBe(false);
     expect(extState.error).toBeTruthy();
-    expect(getFailureAgeSeconds("fail-ext")).toBeTypeOf("number");
+    expect(getFailureAgeSeconds(s, "fail-ext")).toBeTypeOf("number");
   });
 
   it("schedules idle timeout for lazy extensions after activation", async () => {
@@ -246,6 +245,33 @@ describe("activateExtension", () => {
     // 1 minute + — now idle-unloaded
     vi.advanceTimersByTime(31 * 1000);
     expect(extState.loaded).toBe(false);
+  });
+
+  it("deduplicates concurrent activations", async () => {
+    const d = tmpDir();
+    const extPath = join(d, "concurrent.js");
+    writeExtensionFile(extPath, "concurrent_tool");
+
+    const manifest = makeManifest([{ name: "concurrent", path: extPath }]);
+    const s = makeState(manifest);
+
+    // Start two activations at the same time
+    const p1 = activateExtension("concurrent", s, pi as any);
+    const p2 = activateExtension("concurrent", s, pi as any);
+
+    const [r1, r2] = await Promise.all([p1, p2]);
+
+    // Both should succeed
+    expect(r1.success).toBe(true);
+    expect(r2.success).toBe(true);
+
+    // Factory should have run only once (only one tool registration call)
+    const regCount = pi._registeredTools.filter((t) => t === "concurrent_tool").length;
+    expect(regCount).toBe(1);
+
+    // registeredTools must not be wiped out by the race
+    const extState = s.extensions.get("concurrent")!;
+    expect(extState.registeredTools).toEqual(["concurrent_tool"]);
   });
 });
 
@@ -443,7 +469,8 @@ describe("touchExtension", () => {
 
 describe("getFailureAgeSeconds", () => {
   it("returns null when no failure recorded", () => {
-    expect(getFailureAgeSeconds("never-failed")).toBeNull();
+    const s = makeState(makeManifest([]));
+    expect(getFailureAgeSeconds(s, "never-failed")).toBeNull();
   });
 });
 
@@ -479,62 +506,4 @@ describe("clearAllTimers", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// buildProxyDescription
-// ---------------------------------------------------------------------------
 
-describe("buildProxyDescription", () => {
-  it("lists all extensions with lifecycle and tools", () => {
-    const manifest = makeManifest([
-      {
-        name: "todo",
-        path: "/tmp/todo.ts",
-        lifecycle: "lazy",
-        description: "Task manager",
-        toolSummary: ["todo_add", "todo_list"],
-      },
-      {
-        name: "gcp",
-        path: "/tmp/gcp.ts",
-        lifecycle: "keep-alive",
-        tags: ["cloud"],
-      },
-    ]);
-    const s = makeState(manifest);
-    s.extensions.get("gcp")!.loaded = true;
-
-    const desc = buildProxyDescription(s);
-
-    expect(desc).toContain("todo");
-    expect(desc).toContain("lazy");
-    expect(desc).toContain("Task manager");
-    expect(desc).toContain("todo_add");
-    expect(desc).toContain("todo_list");
-    expect(desc).toContain("gcp");
-    expect(desc).toContain("keep-alive");
-    expect(desc).toContain("✓ active");
-    expect(desc).toContain("cloud");
-    expect(desc).toContain("ext({ search:");
-  });
-
-  it("handles empty extensions gracefully", () => {
-    const s = makeState(makeManifest([]));
-    const desc = buildProxyDescription(s);
-
-    expect(desc).toContain("Extension gateway");
-    expect(desc).toContain("Available extensions:");
-    expect(desc).toContain("ext({ search:");
-    // No active/inactive extension indicators
-    expect(desc).not.toContain("✓");
-    expect(desc).not.toContain("○");
-  });
-
-  it("shows ○ lazy for inactive extensions", () => {
-    const manifest = makeManifest([{ name: "lazy-ext", path: "/tmp/lazy.ts" }]);
-    const s = makeState(manifest);
-    const desc = buildProxyDescription(s);
-
-    expect(desc).toContain("○ lazy");
-    expect(desc).toContain("lazy-ext");
-  });
-});

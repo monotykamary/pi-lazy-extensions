@@ -13,20 +13,10 @@ import type { ActivationResult, LazyExtensionsState } from "./types.js";
 import { resolveExtensionPath } from "./config.js";
 
 const FAILURE_BACKOFF_MS = 60 * 1000;
-const failureTracker = new Map<string, number>();
 
 /**
- * Dynamically load an extension by importing its module and invoking the factory.
- *
- * The extension's default export (factory function) receives the shared
- * ExtensionAPI (pi) — the same object that all extensions share. This means
- * pi.registerTool(), pi.on(), etc. all work as expected.
- *
- * Loading strategy:
- * 1. Try jiti (@mariozechner/jiti) — handles TypeScript and provides the
- *    same module aliases the pi SDK's own extension loader uses.
- * 2. Fall back to raw import() — works for .js files and when jiti isn't
- *    available (e.g. test environments).
+ * Deduplicated entry point for activating an extension.
+ * Guards against concurrent activation of the same extension.
  */
 export async function activateExtension(
   name: string,
@@ -77,9 +67,8 @@ export async function activateExtension(
     };
   }
 
-  // --- First-time activation path ---
   // Check failure backoff
-  const failedAgo = getFailureAgeSeconds(name);
+  const failedAgo = getFailureAgeSeconds(state, name);
   if (failedAgo !== null) {
     return {
       success: false,
@@ -87,6 +76,30 @@ export async function activateExtension(
       error: `Extension "${name}" recently failed (${failedAgo}s ago). Retry later.`,
     };
   }
+
+  // Deduplicate concurrent activations
+  if (extState.activationPromise) {
+    return extState.activationPromise;
+  }
+
+  extState.activationPromise = performActivation(name, state, pi);
+  try {
+    const result = await extState.activationPromise;
+    return result;
+  } finally {
+    extState.activationPromise = undefined;
+  }
+}
+
+/**
+ * Core first-time activation logic (wrapped by activateExtension for deduplication).
+ */
+async function performActivation(
+  name: string,
+  state: LazyExtensionsState,
+  pi: ExtensionAPI,
+): Promise<ActivationResult> {
+  const extState = state.extensions.get(name)!;
 
   // Snapshot current tools to diff after load
   const toolsBefore = new Set(pi.getAllTools().map((t: any) => t.name as string));
@@ -100,7 +113,7 @@ export async function activateExtension(
     if (!factory) {
       const message = `Extension "${name}" does not export a default factory function`;
       extState.error = message;
-      failureTracker.set(name, Date.now());
+      state.failureTracker.set(name, Date.now());
       return { success: false, name, error: message };
     }
 
@@ -122,7 +135,7 @@ export async function activateExtension(
     extState.lastActivated = Date.now();
     extState.lastUsed = Date.now();
     extState.error = undefined;
-    failureTracker.delete(name);
+    state.failureTracker.delete(name);
 
     // Start idle timer if configured
     scheduleIdleTimeout(name, state, pi);
@@ -136,7 +149,7 @@ export async function activateExtension(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     extState.error = message;
-    failureTracker.set(name, Date.now());
+    state.failureTracker.set(name, Date.now());
     return { success: false, name, error: message };
   }
 }
@@ -189,12 +202,12 @@ export function touchExtension(name: string, state: LazyExtensionsState): void {
 /**
  * Get the age of a recent failure in seconds, or null if no recent failure.
  */
-export function getFailureAgeSeconds(name: string): number | null {
-  const failedAt = failureTracker.get(name);
+export function getFailureAgeSeconds(state: LazyExtensionsState, name: string): number | null {
+  const failedAt = state.failureTracker.get(name);
   if (!failedAt) return null;
   const ageMs = Date.now() - failedAt;
   if (ageMs > FAILURE_BACKOFF_MS) {
-    failureTracker.delete(name);
+    state.failureTracker.delete(name);
     return null;
   }
   return Math.round(ageMs / 1000);
@@ -280,29 +293,4 @@ export function clearAllTimers(state: LazyExtensionsState): void {
  * Build a description string for the proxy tool that lists available
  * lazy extensions and their tool summaries.
  */
-export function buildProxyDescription(state: LazyExtensionsState): string {
-  const lines: string[] = [
-    "Extension gateway - discover, search, and activate extensions on demand.",
-    "",
-    "Available extensions:",
-  ];
 
-  for (const [name, extState] of state.extensions) {
-    const lifecycle = extState.config.lifecycle ?? "lazy";
-    const status = extState.loaded ? "✓ active" : "○ lazy";
-    const desc = extState.config.description ?? extState.config.toolSummary?.join(", ") ?? "";
-    const tagStr = extState.config.tags?.length ? ` [${extState.config.tags.join(", ")}]` : "";
-
-    lines.push(`  ${status} ${name} (${lifecycle})${tagStr}`);
-    if (desc) lines.push(`    ${desc}`);
-
-    if (extState.config.toolSummary?.length) {
-      lines.push(`    Tools: ${extState.config.toolSummary.join(", ")}`);
-    }
-  }
-
-  lines.push("");
-  lines.push("Use ext({ search: \"query\" }) to find extensions, ext({ activate: \"name\" }) to load one.");
-
-  return lines.join("\n");
-}
