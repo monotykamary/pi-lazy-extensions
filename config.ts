@@ -6,6 +6,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { LazyExtensionConfig, LazyExtensionsManifest, LazyExtensionsState, LoadedExtensionState } from "./types.js";
 
@@ -85,11 +86,27 @@ function parseManifest(filePath: string): LazyExtensionsManifest | null {
 }
 
 /**
+ * Expand leading ~ to the user's home directory.
+ * Mirrors the pi SDK's own expandPath() in its extension loader.
+ */
+function expandTilde(p: string): string {
+  if (p.startsWith("~/")) {
+    return join(homedir(), p.slice(2));
+  }
+  if (p === "~") {
+    return homedir();
+  }
+  return p;
+}
+
+/**
  * Resolve an extension path relative to the manifest's base directory.
+ * Supports ~ expansion (e.g. "~/.pi/agent/extensions/todo.ts").
  */
 export function resolveExtensionPath(extPath: string, baseDir: string): string {
-  if (isAbsolute(extPath)) return extPath;
-  return resolve(baseDir, extPath);
+  const expanded = expandTilde(extPath);
+  if (isAbsolute(expanded)) return expanded;
+  return resolve(baseDir, expanded);
 }
 
 /**

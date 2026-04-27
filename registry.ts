@@ -2,7 +2,7 @@
  * Extension registry - loads and tracks lazy extensions.
  *
  * This is the core of pi-lazy-extensions. It handles:
- * - Dynamic loading of extensions via import() + factory(pi)
+ * - Dynamic loading of extensions via jiti (or import()) + factory(pi)
  * - Tracking registered tools/commands per extension
  * - Idle timeout unloading
  * - Deduplication guards
@@ -21,6 +21,12 @@ const failureTracker = new Map<string, number>();
  * The extension's default export (factory function) receives the shared
  * ExtensionAPI (pi) — the same object that all extensions share. This means
  * pi.registerTool(), pi.on(), etc. all work as expected.
+ *
+ * Loading strategy:
+ * 1. Try jiti (@mariozechner/jiti) — handles TypeScript and provides the
+ *    same module aliases the pi SDK's own extension loader uses.
+ * 2. Fall back to raw import() — works for .js files and when jiti isn't
+ *    available (e.g. test environments).
  */
 export async function activateExtension(
   name: string,
@@ -84,20 +90,19 @@ export async function activateExtension(
 
   // Snapshot current tools to diff after load
   const toolsBefore = new Set(pi.getAllTools().map((t: any) => t.name as string));
+  const commandsBefore = new Set(pi.getCommands().map((c: any) => c.name as string));
 
   const extPath = resolveExtensionPath(extState.config.path, state.baseDir);
 
   try {
-    const mod = await import(extPath);
+    const factory = await loadExtensionFactory(extPath);
 
-    if (typeof mod.default !== "function") {
+    if (!factory) {
       const message = `Extension "${name}" does not export a default factory function`;
       extState.error = message;
       failureTracker.set(name, Date.now());
       return { success: false, name, error: message };
     }
-
-    const factory = mod.default as (pi: ExtensionAPI) => void | Promise<void>;
 
     // Invoke the extension factory with the shared ExtensionAPI.
     // This registers tools, events, commands, etc. into the same runtime.
@@ -107,6 +112,11 @@ export async function activateExtension(
     const toolsAfter = pi.getAllTools().map((t: any) => t.name as string);
     const newTools = toolsAfter.filter(t => !toolsBefore.has(t));
     extState.registeredTools = newTools;
+
+    // Diff commands the same way
+    const commandsAfter = pi.getCommands().map((c: any) => c.name as string);
+    const newCommands = commandsAfter.filter(c => !commandsBefore.has(c));
+    extState.registeredCommands = newCommands;
 
     extState.loaded = true;
     extState.lastActivated = Date.now();
@@ -129,6 +139,41 @@ export async function activateExtension(
     failureTracker.set(name, Date.now());
     return { success: false, name, error: message };
   }
+}
+
+/**
+ * Load an extension module and extract its default factory function.
+ *
+ * Tries jiti first (for TypeScript support and module alias resolution),
+ * then falls back to raw import() for .js files or when jiti is unavailable.
+ */
+async function loadExtensionFactory(
+  extPath: string,
+): Promise<((pi: ExtensionAPI) => void | Promise<void>) | undefined> {
+  // Attempt 1: jiti — handles .ts and provides SDK-compatible module aliases
+  try {
+    const { createJiti } = await import("@mariozechner/jiti");
+    const jiti = createJiti(import.meta.url, {
+      moduleCache: false,
+    });
+    const mod = await jiti.import(extPath, { default: true });
+    if (typeof mod === "function") {
+      return mod as (pi: ExtensionAPI) => void | Promise<void>;
+    }
+    if (typeof (mod as any)?.default === "function") {
+      return (mod as any).default as (pi: ExtensionAPI) => void | Promise<void>;
+    }
+    return undefined;
+  } catch {
+    // jiti unavailable or failed — fall through to raw import
+  }
+
+  // Attempt 2: raw import() — works for .js files, no TypeScript support
+  const mod = await import(extPath);
+  if (typeof mod.default === "function") {
+    return mod.default as (pi: ExtensionAPI) => void | Promise<void>;
+  }
+  return undefined;
 }
 
 /**

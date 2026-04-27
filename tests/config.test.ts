@@ -194,6 +194,21 @@ describe("resolveExtensionPath", () => {
     expect(resolved).toContain("/base/shared/ext");
     expect(resolved).not.toContain("/base/project");
   });
+
+  it("expands ~/ to home directory", () => {
+    const resolved = resolveExtensionPath("~/.pi/agent/extensions/todo.ts", "/base");
+    // Must NOT start with /base/~ — should start with the actual home dir
+    expect(resolved).not.toContain("~");
+    expect(resolved).toMatch(/\.pi\/agent\/extensions\/todo\.ts$/);
+    // Should be absolute
+    expect(resolved.startsWith("/")).toBe(true);
+  });
+
+  it("expands bare ~ to home directory", () => {
+    const resolved = resolveExtensionPath("~", "/base");
+    expect(resolved).not.toContain("~");
+    expect(resolved.startsWith("/")).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

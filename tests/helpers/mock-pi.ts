@@ -123,6 +123,10 @@ export function createMockPi(opts: MockPiOptions = {}): MockPi {
       commandHandlers.push({ name, config });
     },
 
+    getCommands(): any[] {
+      return commandHandlers.map(c => ({ name: c.name, ...c.config }));
+    },
+
     // --- Stubs for methods not exercised by these tests ---
     registerShortcut: noop as any,
     registerFlag: noop as any,
@@ -135,7 +139,6 @@ export function createMockPi(opts: MockPiOptions = {}): MockPi {
     getSessionName: noop as any,
     setLabel: noop as any,
     exec: noop as any,
-    getCommands: noop as any,
     setModel: noop as any,
     getThinkingLevel: noop as any,
     setThinkingLevel: noop as any,
