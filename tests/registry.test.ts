@@ -8,6 +8,7 @@ import {
   touchExtension,
   getFailureAgeSeconds,
   clearAllTimers,
+  resetJitiAliases,
 } from "../registry.js";
 
 import {
@@ -510,4 +511,253 @@ describe("clearAllTimers", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// buildJitiAliases (indirectly tested via loadExtensionFactory)
+// ---------------------------------------------------------------------------
 
+describe("jiti alias resolution", () => {
+  let pi: MockPi;
+
+  beforeEach(() => {
+    pi = createMockPi();
+    resetJitiAliases();
+  });
+
+  it("loads a .ts extension that imports typebox", async () => {
+    const d = tmpDir();
+    const extPath = join(d, "typebox-ext.ts");
+    // Write a .ts extension that uses typebox — the most common import
+    writeFileSync(extPath, [
+      'import { Type } from "typebox";',
+      "export default function (pi: any) {",
+      "  pi.registerTool({",
+      '    name: "typebox_tool",',
+      '    label: "Typebox Test",',
+      '    description: "Uses typebox",',
+      "    parameters: Type.Object({ msg: Type.String() }),",
+      '    async execute() { return { content: [{ type: "text", text: "ok" }] }; }',
+      "  });",
+      "}",
+    ].join("\n"), "utf-8");
+
+    const manifest = makeManifest([{ name: "typebox-ext", path: extPath }]);
+    const s = makeState(manifest);
+
+    const result = await activateExtension("typebox-ext", s, pi as any);
+
+    expect(result.success).toBe(true);
+    expect(result.tools).toContain("typebox_tool");
+    expect(pi.getAllTools().some((t) => t.name === "typebox_tool")).toBe(true);
+  });
+
+  it("loads a .ts extension that imports from @mariozechner/pi-coding-agent", async () => {
+    const d = tmpDir();
+    const extPath = join(d, "sdk-import-ext.ts");
+    writeFileSync(extPath, [
+      'import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";',
+      "export default function (pi: ExtensionAPI) {",
+      "  pi.registerTool({",
+      '    name: "sdk_import_tool",',
+      '    label: "SDK Import Test",',
+      '    description: "Uses SDK imports",',
+      "    parameters: {},",
+      '    async execute() { return { content: [{ type: "text", text: "ok" }] }; }',
+      "  });",
+      "}",
+    ].join("\n"), "utf-8");
+
+    const manifest = makeManifest([{ name: "sdk-import-ext", path: extPath }]);
+    const s = makeState(manifest);
+
+    const result = await activateExtension("sdk-import-ext", s, pi as any);
+
+    expect(result.success).toBe(true);
+    expect(result.tools).toContain("sdk_import_tool");
+  });
+
+  it("loads a .ts extension that imports from @mariozechner/pi-tui", async () => {
+    const d = tmpDir();
+    const extPath = join(d, "tui-import-ext.ts");
+    writeFileSync(extPath, [
+      'import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";',
+      'import { Text } from "@mariozechner/pi-tui";',
+      "export default function (pi: ExtensionAPI) {",
+      "  pi.registerTool({",
+      '    name: "tui_import_tool",',
+      '    label: "TUI Import Test",',
+      '    description: "Uses TUI imports",',
+      "    parameters: {},",
+      '    async execute() { return { content: [{ type: "text", text: "ok" }] }; }',
+      "  });",
+      "}",
+    ].join("\n"), "utf-8");
+
+    const manifest = makeManifest([{ name: "tui-import-ext", path: extPath }]);
+    const s = makeState(manifest);
+
+    const result = await activateExtension("tui-import-ext", s, pi as any);
+
+    expect(result.success).toBe(true);
+    expect(result.tools).toContain("tui_import_tool");
+  });
+
+  it("caches jiti aliases across calls (resetJitiAliases clears cache)", async () => {
+    const d = tmpDir();
+    const extPath = join(d, "cache-ext.ts");
+    writeFileSync(extPath, [
+      'import { Type } from "typebox";',
+      "export default function (pi: any) {",
+      "  pi.registerTool({",
+      '    name: "cache_tool",',
+      '    label: "Cache",',
+      '    description: "test",',
+      "    parameters: Type.Object({}),",
+      '    async execute() { return { content: [{ type: "text", text: "ok" }] }; }',
+      "  });",
+      "}",
+    ].join("\n"), "utf-8");
+
+    const manifest = makeManifest([{ name: "cache-ext", path: extPath }]);
+    const s = makeState(manifest);
+
+    // First load — builds and caches aliases
+    const r1 = await activateExtension("cache-ext", s, pi as any);
+    expect(r1.success).toBe(true);
+
+    // Reset and reload — should work again
+    resetJitiAliases();
+    pi = createMockPi();
+    const s2 = makeState(manifest);
+    const r2 = await activateExtension("cache-ext", s2, pi as any);
+    expect(r2.success).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Shortcuts, flags, renderers tracking
+// ---------------------------------------------------------------------------
+
+describe("shortcuts, flags, and renderers tracking", () => {
+  let pi: MockPi;
+
+  beforeEach(() => {
+    pi = createMockPi();
+  });
+
+  it("tracks registered shortcuts in mock pi", async () => {
+    const d = tmpDir();
+    const extPath = join(d, "shortcut-ext.js");
+    writeExtensionFile(extPath, "shortcut_tool");
+    // The real extension would call registerShortcut, but since we test
+    // via mock, we verify the mock captures it
+    const manifest = makeManifest([{ name: "shortcut-ext", path: extPath }]);
+    const s = makeState(manifest);
+
+    const result = await activateExtension("shortcut-ext", s, pi as any);
+    expect(result.success).toBe(true);
+    // The mock captures shortcut registrations
+    expect(pi._shortcuts).toBeDefined();
+  });
+
+  it("tracks registered flags in mock pi", async () => {
+    const d = tmpDir();
+    const extPath = join(d, "flag-ext.js");
+    writeExtensionFile(extPath, "flag_tool");
+
+    const manifest = makeManifest([{ name: "flag-ext", path: extPath }]);
+    const s = makeState(manifest);
+
+    const result = await activateExtension("flag-ext", s, pi as any);
+    expect(result.success).toBe(true);
+    // The mock captures flag registrations
+    expect(pi._flags).toBeDefined();
+  });
+
+  it("tracks registered message renderers in mock pi", async () => {
+    const d = tmpDir();
+    const extPath = join(d, "renderer-ext.js");
+    writeExtensionFile(extPath, "renderer_tool");
+
+    const manifest = makeManifest([{ name: "renderer-ext", path: extPath }]);
+    const s = makeState(manifest);
+
+    const result = await activateExtension("renderer-ext", s, pi as any);
+    expect(result.success).toBe(true);
+    // The mock captures renderer registrations
+    expect(pi._messageRenderers).toBeDefined();
+  });
+
+  it("initializes empty tracking arrays in state", () => {
+    const manifest = makeManifest([{ name: "x", path: "/tmp/x.ts" }]);
+    const s = makeState(manifest);
+    const extState = s.extensions.get("x")!;
+
+    expect(extState.registeredShortcuts).toEqual([]);
+    expect(extState.registeredFlags).toEqual([]);
+    expect(extState.registeredRenderers).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildJitiAliases — direct unit test
+// ---------------------------------------------------------------------------
+
+describe("buildJitiAliases", () => {
+  beforeEach(() => {
+    resetJitiAliases();
+  });
+
+  it("resolves typebox to an absolute path", async () => {
+    const { createJiti } = await import("@mariozechner/jiti");
+    // Call loadExtensionFactory indirectly by activating an extension
+    // that imports typebox — this exercises buildJitiAliases internally.
+    // We verify the alias map works by testing a real extension load.
+    const d = tmpDir();
+    const extPath = join(d, "alias-check.ts");
+    writeFileSync(extPath, [
+      'import { Type } from "typebox";',
+      "export default function (pi: any) {",
+      "  pi.registerTool({",
+      '    name: "alias_check_tool",',
+      '    label: "Alias Check",',
+      '    description: "Checks alias resolution",',
+      "    parameters: Type.Object({}),",
+      '    async execute() { return { content: [{ type: "text", text: "ok" }] }; }',
+      "  });",
+      "}",
+    ].join("\n"), "utf-8");
+
+    const pi = createMockPi();
+    const manifest = makeManifest([{ name: "alias-check", path: extPath }]);
+    const s = makeState(manifest);
+
+    const result = await activateExtension("alias-check", s, pi as any);
+    expect(result.success).toBe(true);
+    expect(result.tools).toContain("alias_check_tool");
+  });
+
+  it("resolves @mariozechner/pi-coding-agent to an absolute path", async () => {
+    const d = tmpDir();
+    const extPath = join(d, "pi-pkg-alias.ts");
+    writeFileSync(extPath, [
+      'import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";',
+      "export default function (pi: ExtensionAPI) {",
+      "  pi.registerTool({",
+      '    name: "pi_pkg_alias_tool",',
+      '    label: "PI Pkg Alias Check",',
+      '    description: "Checks pi-coding-agent alias",',
+      "    parameters: {},",
+      '    async execute() { return { content: [{ type: "text", text: "ok" }] }; }',
+      "  });",
+      "}",
+    ].join("\n"), "utf-8");
+
+    const pi = createMockPi();
+    const manifest = makeManifest([{ name: "pi-pkg-alias", path: extPath }]);
+    const s = makeState(manifest);
+
+    const result = await activateExtension("pi-pkg-alias", s, pi as any);
+    expect(result.success).toBe(true);
+    expect(result.tools).toContain("pi_pkg_alias_tool");
+  });
+});

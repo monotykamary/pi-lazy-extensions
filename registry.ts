@@ -11,6 +11,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import type { ActivationResult, LazyExtensionsState } from "./types.js";
 import { resolveExtensionPath } from "./config.js";
+import { fileURLToPath } from "node:url";
 
 const FAILURE_BACKOFF_MS = 60 * 1000;
 
@@ -104,9 +105,30 @@ async function performActivation(
 ): Promise<ActivationResult> {
   const extState = state.extensions.get(name)!;
 
-  // Snapshot current tools to diff after load
+  // Snapshot current registries to diff after load
   const toolsBefore = new Set(pi.getAllTools().map((t: any) => t.name as string));
   const commandsBefore = new Set(pi.getCommands().map((c: any) => c.name as string));
+
+  // Wrap pi to intercept shortcuts, flags, and renderers registered
+  // during factory(pi) — the ExtensionAPI doesn't expose getters for these.
+  const registeredShortcuts: string[] = [];
+  const registeredFlags: string[] = [];
+  const registeredRenderers: string[] = [];
+  const origRegisterShortcut = (pi as any).registerShortcut?.bind(pi);
+  const origRegisterFlag = (pi as any).registerFlag?.bind(pi);
+  const origRegisterMessageRenderer = (pi as any).registerMessageRenderer?.bind(pi);
+  (pi as any).registerShortcut = (shortcut: string, options: any) => {
+    registeredShortcuts.push(shortcut);
+    origRegisterShortcut?.(shortcut, options);
+  };
+  (pi as any).registerFlag = (name: string, options: any) => {
+    registeredFlags.push(name);
+    origRegisterFlag?.(name, options);
+  };
+  (pi as any).registerMessageRenderer = (customType: string, renderer: any) => {
+    registeredRenderers.push(customType);
+    origRegisterMessageRenderer?.(customType, renderer);
+  };
 
   const extPath = resolveExtensionPath(extState.config.path, state.baseDir);
 
@@ -134,12 +156,24 @@ async function performActivation(
     const newCommands = commandsAfter.filter(c => !commandsBefore.has(c));
     extState.registeredCommands = newCommands;
 
+    // Track shortcuts, flags, and renderers (informational — cannot be deactivated)
+    // Track shortcuts, flags, and renderers (informational — cannot be deactivated)
+    // These were captured by our wrapped pi methods during factory(pi).
+    extState.registeredShortcuts = registeredShortcuts;
+    extState.registeredFlags = registeredFlags;
+    extState.registeredRenderers = registeredRenderers;
+
     extState.loaded = true;
     extState.factoryCalled = true;
     extState.lastActivated = Date.now();
     extState.lastUsed = Date.now();
     extState.error = undefined;
     state.failureTracker.delete(name);
+
+    // Restore original pi methods
+    (pi as any).registerShortcut = origRegisterShortcut;
+    (pi as any).registerFlag = origRegisterFlag;
+    (pi as any).registerMessageRenderer = origRegisterMessageRenderer;
 
     // Start idle timer if configured
     scheduleIdleTimeout(name, state, pi);
@@ -149,8 +183,16 @@ async function performActivation(
       name,
       tools: newTools,
       commands: extState.registeredCommands,
+      shortcuts: registeredShortcuts,
+      flags: registeredFlags,
+      renderers: registeredRenderers,
     };
   } catch (error) {
+    // Restore original pi methods on error too
+    (pi as any).registerShortcut = origRegisterShortcut;
+    (pi as any).registerFlag = origRegisterFlag;
+    (pi as any).registerMessageRenderer = origRegisterMessageRenderer;
+
     const message = error instanceof Error ? error.message : String(error);
     extState.error = message;
     state.failureTracker.set(name, Date.now());
@@ -159,10 +201,82 @@ async function performActivation(
 }
 
 /**
+ * Build the jiti alias map that mirrors pi's own extension loader.
+ *
+ * Pi bundles core packages (typebox, @mariozechner/pi-ai, etc.) and resolves
+ * them via aliases when loading extensions with jiti. Without these aliases,
+ * extensions that `import { Type } from "typebox"` or import from
+ * `@mariozechner/pi-coding-agent` will fail with module-not-found errors.
+ *
+ * We resolve the same packages via import.meta.resolve() which works
+ * because pi-lazy-extensions itself depends on @mariozechner/pi-coding-agent
+ * (the peer dependency is installed), and typebox is bundled by pi.
+ */
+let _jitiAliases: Record<string, string> | undefined;
+
+function buildJitiAliases(): Record<string, string> {
+  if (_jitiAliases) return _jitiAliases;
+
+  const aliases: Record<string, string> = {};
+
+  // Core pi packages that extensions commonly import
+  const piPackages = [
+    "@mariozechner/pi-coding-agent",
+    "@mariozechner/pi-agent-core",
+    "@mariozechner/pi-tui",
+    "@mariozechner/pi-ai",
+    "@mariozechner/pi-ai/oauth",
+  ] as const;
+
+  for (const pkg of piPackages) {
+    try {
+      aliases[pkg] = fileURLToPath(import.meta.resolve(pkg));
+    } catch {
+      // Package not available in this environment — skip
+    }
+  }
+
+  // typebox and its subpath exports (most extensions use `import { Type } from "typebox"`)
+  const typeboxSpecs = ["typebox", "typebox/compile", "typebox/value"] as const;
+  for (const spec of typeboxSpecs) {
+    try {
+      aliases[spec] = fileURLToPath(import.meta.resolve(spec));
+    } catch {
+      // typebox not available — skip
+    }
+  }
+
+  // Alias legacy @sinclair/typebox to the same entries (some extensions still use it)
+  if (aliases["typebox"]) {
+    aliases["@sinclair/typebox"] = aliases["typebox"];
+  }
+  if (aliases["typebox/compile"]) {
+    aliases["@sinclair/typebox/compile"] = aliases["typebox/compile"];
+  }
+  if (aliases["typebox/value"]) {
+    aliases["@sinclair/typebox/value"] = aliases["typebox/value"];
+  }
+
+  _jitiAliases = aliases;
+  return aliases;
+}
+
+/**
+ * Reset cached jiti aliases (for testing or after module changes).
+ */
+export function resetJitiAliases(): void {
+  _jitiAliases = undefined;
+}
+
+/**
  * Load an extension module and extract its default factory function.
  *
  * Tries jiti first (for TypeScript support and module alias resolution),
  * then falls back to raw import() for .js files or when jiti is unavailable.
+ *
+ * Jiti is configured with the same alias map that pi's own extension loader
+ * uses, so extensions can import from `typebox`, `@mariozechner/pi-coding-agent`,
+ * etc. just like they would in a normally-loaded extension.
  */
 async function loadExtensionFactory(
   extPath: string,
@@ -172,6 +286,7 @@ async function loadExtensionFactory(
     const { createJiti } = await import("@mariozechner/jiti");
     const jiti = createJiti(import.meta.url, {
       moduleCache: false,
+      alias: buildJitiAliases(),
     });
     const mod = await jiti.import(extPath, { default: true });
     if (typeof mod === "function") {

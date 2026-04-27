@@ -15,11 +15,14 @@ type ProxyToolResult = AgentToolResult<Record<string, unknown>>;
  * Show status of all registered extensions.
  */
 export function executeStatus(state: LazyExtensionsState): ProxyToolResult {
-  const entries: Array<{ name: string; status: string; lifecycle: string; toolCount: number; error?: string }> = [];
+  const entries: Array<{ name: string; status: string; lifecycle: string; toolCount: number; shortcutCount: number; flagCount: number; rendererCount: number; error?: string }> = [];
 
   for (const [name, extState] of state.extensions) {
     const lifecycle = extState.config.lifecycle ?? "lazy";
     const toolCount = extState.registeredTools.length;
+    const shortcutCount = extState.registeredShortcuts.length;
+    const flagCount = extState.registeredFlags.length;
+    const rendererCount = extState.registeredRenderers.length;
     let status = "inactive";
     if (extState.loaded) {
       status = "active";
@@ -28,7 +31,7 @@ export function executeStatus(state: LazyExtensionsState): ProxyToolResult {
     } else if (getFailureAgeSeconds(state, name) !== null) {
       status = "failed";
     }
-    entries.push({ name, status, lifecycle, toolCount, error: extState.error });
+    entries.push({ name, status, lifecycle, toolCount, shortcutCount, flagCount, rendererCount, error: extState.error });
   }
 
   const activeCount = entries.filter(e => e.status === "active").length;
@@ -37,7 +40,12 @@ export function executeStatus(state: LazyExtensionsState): ProxyToolResult {
   let text = `Lazy Extensions: ${activeCount}/${entries.length} active, ${totalTools} tools\n\n`;
   for (const entry of entries) {
     if (entry.status === "active") {
-      text += `✓ ${entry.name} (${entry.toolCount} tools, ${entry.lifecycle})\n`;
+      const extras: string[] = [];
+      if (entry.shortcutCount > 0) extras.push(`${entry.shortcutCount} shortcuts`);
+      if (entry.flagCount > 0) extras.push(`${entry.flagCount} flags`);
+      if (entry.rendererCount > 0) extras.push(`${entry.rendererCount} renderers`);
+      const extraStr = extras.length > 0 ? `, ${extras.join(", ")}` : "";
+      text += `✓ ${entry.name} (${entry.toolCount} tools${extraStr}, ${entry.lifecycle})\n`;
     } else if (entry.status === "failed") {
       text += `✗ ${entry.name} (failed: ${entry.error ?? "unknown"})\n`;
     } else {
@@ -189,14 +197,19 @@ export async function executeActivate(
   const toolList = result.tools?.length
     ? ` Registered tools: ${result.tools.join(", ")}`
     : "";
+  const nonToolExtras: string[] = [];
+  if (result.shortcuts?.length) nonToolExtras.push(`${result.shortcuts.length} shortcuts`);
+  if (result.flags?.length) nonToolExtras.push(`${result.flags.length} flags`);
+  if (result.renderers?.length) nonToolExtras.push(`${result.renderers.length} renderers`);
+  const nonToolStr = nonToolExtras.length > 0 ? ` Also registered: ${nonToolExtras.join(", ")} (these persist after idle-unload).` : "";
   const desc = extState.config.description ?? "";
 
   return {
     content: [{
       type: "text",
-      text: `✓ Activated "${name}"${desc ? ` - ${desc}` : ""}.${toolList}\n\nThe extension's tools are now directly available.`,
+      text: `✓ Activated "${name}"${desc ? ` - ${desc}` : ""}.${toolList}${nonToolStr}\n\nThe extension's tools are now directly available.`,
     }],
-    details: { mode: "activate", name, tools: result.tools },
+    details: { mode: "activate", name, tools: result.tools, shortcuts: result.shortcuts, flags: result.flags, renderers: result.renderers },
   };
 }
 

@@ -610,3 +610,52 @@ describe("lifecycle generation guard", () => {
     expect(ctx2.ui.notify).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// ext tool name collision warning
+// ---------------------------------------------------------------------------
+
+describe("ext tool name collision", () => {
+  it("warns when another extension already registered 'ext'", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // Create a mock pi that already has an 'ext' tool
+    const pi = createMockPi({
+      tools: [
+        {
+          name: "ext",
+          description: "Pre-existing ext tool",
+          parameters: {} as any,
+          sourceInfo: { path: "<other>", source: "extension", scope: "temporary", origin: "top-level" },
+        },
+      ],
+      activeTools: ["ext"],
+    });
+    const factory = await loadExtension();
+
+    factory(pi as any);
+
+    // Should have logged a warning about the collision
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining("another extension already registered a tool named 'ext'"),
+    );
+
+    consoleSpy.mockRestore();
+  });
+
+  it("does not warn when no collision exists", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const pi = createMockPi();
+    const factory = await loadExtension();
+
+    factory(pi as any);
+
+    // Should NOT have logged a collision warning
+    expect(consoleSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("another extension already registered a tool named 'ext'"),
+    );
+
+    consoleSpy.mockRestore();
+  });
+});

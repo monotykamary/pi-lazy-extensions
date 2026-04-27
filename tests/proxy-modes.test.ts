@@ -339,3 +339,37 @@ describe("executeListTools", () => {
     expect(todoState.lastUsed!).toBeGreaterThan(before);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Status with shortcuts, flags, renderers
+// ---------------------------------------------------------------------------
+
+describe("executeStatus with non-tool registrations", () => {
+  it("shows shortcuts, flags, and renderers for active extensions", () => {
+    const { state } = setupState();
+    const todoState = state.extensions.get("todo")!;
+    todoState.registeredShortcuts = ["ctrl+shift+t"];
+    todoState.registeredFlags = ["todo-mode"];
+    todoState.registeredRenderers = ["todo-message"];
+
+    const result = executeStatus(state);
+    const text = result.content[0].text as string;
+
+    // Should show non-tool registrations for the active extension
+    expect(text).toContain("1 shortcuts");
+    expect(text).toContain("1 flags");
+    expect(text).toContain("1 renderers");
+  });
+
+  it("does not show extras section when there are none", () => {
+    const { state } = setupState();
+    // todo has no shortcuts/flags/renderers
+    const result = executeStatus(state);
+    const text = result.content[0].text as string;
+
+    // Should show tools count but not shortcuts/flags/renderers
+    expect(text).not.toContain("shortcuts");
+    expect(text).not.toContain("flags");
+    expect(text).not.toContain("renderers");
+  });
+});

@@ -88,6 +88,27 @@ export interface LoadedExtensionState {
   /** Names of commands registered by this extension (populated after load). */
   registeredCommands: string[];
 
+  /**
+   * Shortcuts registered by this extension (populated after load).
+   * Tracked for informational purposes — shortcuts cannot be deactivated
+   * via setActiveTools and will persist after idle-unload.
+   */
+  registeredShortcuts: string[];
+
+  /**
+   * Flags registered by this extension (populated after load).
+   * Tracked for informational purposes — flags cannot be deactivated
+   * and will persist after idle-unload.
+   */
+  registeredFlags: string[];
+
+  /**
+   * Message renderer customTypes registered by this extension (populated after load).
+   * Tracked for informational purposes — renderers cannot be deactivated
+   * and will persist after idle-unload.
+   */
+  registeredRenderers: string[];
+
   /** Timer for idle unloading, if applicable. */
   idleTimer?: ReturnType<typeof setTimeout>;
 
@@ -119,5 +140,11 @@ export interface ActivationResult {
   name: string;
   tools?: string[];
   commands?: string[];
+  /** Shortcuts registered (informational — cannot be deactivated). */
+  shortcuts?: string[];
+  /** Flags registered (informational — cannot be deactivated). */
+  flags?: string[];
+  /** Message renderer customTypes registered (informational — cannot be deactivated). */
+  renderers?: string[];
   error?: string;
 }

@@ -126,6 +126,9 @@ export function buildState(
       factoryCalled: false,
       registeredTools: [],
       registeredCommands: [],
+      registeredShortcuts: [],
+      registeredFlags: [],
+      registeredRenderers: [],
     });
   }
 

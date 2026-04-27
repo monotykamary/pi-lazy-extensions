@@ -32,6 +32,9 @@ export interface MockPi extends ExtensionAPI {
   _registeredTools: string[];
   _eventHandlers: Map<string, Array<(...args: any[]) => void>>;
   _commandHandlers: Array<{ name: string; config: any }>;
+  _shortcuts: Array<{ shortcut: string; options: any }>;
+  _flags: Map<string, { options: any; value?: boolean | string }>;
+  _messageRenderers: Map<string, any>;
 }
 
 const DEFAULT_BUILTIN_TOOLS: ToolInfo[] = [
@@ -70,6 +73,9 @@ export function createMockPi(opts: MockPiOptions = {}): MockPi {
   // Event handler storage — tests can retrieve and fire handlers
   const eventHandlers = new Map<string, Array<(...args: any[]) => void>>();
   const commandHandlers: Array<{ name: string; config: any }> = [];
+  const shortcuts: Array<{ shortcut: string; options: any }> = [];
+  const flags = new Map<string, { options: any; value?: boolean | string }>();
+  const messageRenderers = new Map<string, any>();
 
   const mock: MockPi = {
     _toolRegistry: toolRegistry,
@@ -80,6 +86,9 @@ export function createMockPi(opts: MockPiOptions = {}): MockPi {
     // Exposed for tests to introspect
     _eventHandlers: eventHandlers,
     _commandHandlers: commandHandlers,
+    _shortcuts: shortcuts,
+    _flags: flags,
+    _messageRenderers: messageRenderers,
 
     // --- Tool management ---
     getAllTools(): ToolInfo[] {
@@ -127,11 +136,23 @@ export function createMockPi(opts: MockPiOptions = {}): MockPi {
       return commandHandlers.map(c => ({ name: c.name, ...c.config }));
     },
 
-    // --- Stubs for methods not exercised by these tests ---
-    registerShortcut: noop as any,
-    registerFlag: noop as any,
-    getFlag: noop as any,
-    registerMessageRenderer: noop as any,
+    // --- Shortcuts, flags, renderers ---
+    registerShortcut(shortcut: string, options: any) {
+      shortcuts.push({ shortcut, options });
+    },
+    registerFlag(name: string, options: any) {
+      flags.set(name, { options });
+      if (options.default !== undefined && !flags.get(name)?.value) {
+        flags.get(name)!.value = options.default;
+      }
+    },
+    getFlag(name: string): boolean | string | undefined {
+      if (!flags.has(name)) return undefined;
+      return flags.get(name)!.value;
+    },
+    registerMessageRenderer(customType: string, renderer: any) {
+      messageRenderers.set(customType, renderer);
+    },
     sendMessage: noop as any,
     sendUserMessage: noop as any,
     appendEntry: noop as any,

@@ -30,6 +30,18 @@ export default function lazyExtensions(pi: ExtensionAPI) {
   const getPiTools = (): ToolInfo[] => pi.getAllTools();
   const agentDir = process.env.PI_AGENT_DIR ?? process.env.PI_CODING_AGENT_DIR ?? `${process.env.HOME}/.pi/agent`;
 
+  // Check for tool name collision before registering the proxy tool.
+  // Pi uses "first registration wins" — if another extension already
+  // registered a tool named "ext", our proxy would be silently skipped.
+  const existingTools = pi.getAllTools();
+  if (existingTools.some(t => t.name === "ext")) {
+    console.error(
+      "pi-lazy-extensions: another extension already registered a tool named 'ext'. " +
+      "The proxy tool will not be available. Use the /ext command instead, " +
+      "or remove the conflicting extension."
+    );
+  }
+
   pi.on("session_start", async (_event, ctx) => {
     const generation = ++lifecycleGeneration;
 
@@ -113,7 +125,11 @@ export default function lazyExtensions(pi: ExtensionAPI) {
     initPromise = null;
   });
 
-  // Reset idle timers when lazy extension tools are used
+  // Reset idle timers when lazy extension tools are used.
+  // Note: if a lazy extension's tool result arrives during session_start
+  // (after state is built but before initPromise resolves), touchExtension
+  // won't find the tool name and safely returns without touching. This is
+  // harmless — the idle timer hasn't started yet for that extension anyway.
   pi.on("tool_execution_end", (event) => {
     if (!state) return;
     for (const [name, extState] of state.extensions) {
