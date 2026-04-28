@@ -204,12 +204,21 @@ export async function executeActivate(
   const nonToolStr = nonToolExtras.length > 0 ? ` Also registered: ${nonToolExtras.join(", ")} (these persist after idle-unload).` : "";
   const desc = extState.config.description ?? "";
 
+  const warnings: string[] = [];
+  if (result.duplicateTools?.length) {
+    warnings.push(`⚠ Tool name collision: "${result.duplicateTools.join(", ")}" already registered by another extension (skipped).`);
+  }
+  if (result.sessionStartWarning) {
+    warnings.push(`⚠ This extension registered a session_start handler that won't fire until the next session/reload. If it depends on session_start for initialization, it may not work correctly when lazy-loaded.`);
+  }
+  const warningStr = warnings.length > 0 ? `\n\n${warnings.join("\n\n")}` : "";
+
   return {
     content: [{
       type: "text",
-      text: `✓ Activated "${name}"${desc ? ` - ${desc}` : ""}.${toolList}${nonToolStr}\n\nThe extension's tools are now directly available.`,
+      text: `✓ Activated "${name}"${desc ? ` - ${desc}` : ""}.${toolList}${nonToolStr}${warningStr}\n\nThe extension's tools are now directly available.`,
     }],
-    details: { mode: "activate", name, tools: result.tools, shortcuts: result.shortcuts, flags: result.flags, renderers: result.renderers },
+    details: { mode: "activate", name, tools: result.tools, shortcuts: result.shortcuts, flags: result.flags, renderers: result.renderers, duplicateTools: result.duplicateTools, sessionStartWarning: result.sessionStartWarning },
   };
 }
 

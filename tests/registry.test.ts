@@ -466,6 +466,36 @@ describe("touchExtension", () => {
     expect(extState.lastUsed).toBeGreaterThan(before);
     expect(extState.loaded).toBe(true);
   });
+
+  it("reschedules idle timer when state.pi is available", async () => {
+    vi.useFakeTimers();
+    const pi = createMockPi();
+
+    const d = tmpDir();
+    const extPath = join(d, "timer-reset-ext.js");
+    writeExtensionFile(extPath, "timer_reset_tool");
+
+    const manifest = makeManifest([{ name: "timer-reset-ext", path: extPath }]);
+    const s = makeState(manifest);
+    s.pi = pi; // Enable timer rescheduling in touchExtension
+
+    await activateExtension("timer-reset-ext", s, pi as any);
+    const extState = s.extensions.get("timer-reset-ext")!;
+    expect(extState.loaded).toBe(true);
+
+    // Use the tool after 5min (half of default 10min idle timeout)
+    vi.advanceTimersByTime(5 * 60 * 1000);
+    touchExtension("timer-reset-ext", s);
+
+    // At 10min (original timer), the extension should NOT be unloaded
+    // because touchExtension reset the timer to a full 10min from now
+    vi.advanceTimersByTime(5 * 60 * 1000);
+    expect(extState.loaded).toBe(true);
+
+    // At 15min (5min touch + 10min new timeout), it should be unloaded
+    vi.advanceTimersByTime(5 * 60 * 1000 + 1000);
+    expect(extState.loaded).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -759,5 +789,202 @@ describe("buildJitiAliases", () => {
     const result = await activateExtension("pi-pkg-alias", s, pi as any);
     expect(result.success).toBe(true);
     expect(result.tools).toContain("pi_pkg_alias_tool");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Serialization of concurrent activations (Bug #2 & #3 fix)
+// ---------------------------------------------------------------------------
+
+describe("serialization of concurrent activations", () => {
+  let pi: MockPi;
+
+  beforeEach(() => {
+    pi = createMockPi();
+  });
+
+  it("prevents tool-diff cross-contamination between concurrent activations", async () => {
+    const d = tmpDir();
+    const extPathA = join(d, "ser-a.js");
+    const extPathB = join(d, "ser-b.js");
+    writeExtensionFile(extPathA, "tool_a");
+    writeExtensionFile(extPathB, "tool_b");
+
+    const manifest = makeManifest([
+      { name: "ser-a", path: extPathA },
+      { name: "ser-b", path: extPathB },
+    ]);
+    const s = makeState(manifest);
+
+    // Activate both concurrently — serialization ensures one-at-a-time
+    const [rA, rB] = await Promise.all([
+      activateExtension("ser-a", s, pi as any),
+      activateExtension("ser-b", s, pi as any),
+    ]);
+
+    expect(rA.success).toBe(true);
+    expect(rB.success).toBe(true);
+
+    // Tool attribution must be correct — no cross-contamination
+    expect(rA.tools).toEqual(["tool_a"]);
+    expect(rB.tools).toEqual(["tool_b"]);
+
+    // State tracking must be correct
+    expect(s.extensions.get("ser-a")!.registeredTools).toEqual(["tool_a"]);
+    expect(s.extensions.get("ser-b")!.registeredTools).toEqual(["tool_b"]);
+  });
+
+  it("preserves method wrapping integrity across activations", async () => {
+    const d = tmpDir();
+    const extPathA = join(d, "wrap-a.js");
+    const extPathB = join(d, "wrap-b.js");
+    writeExtensionFile(extPathA, "wrap_tool_a");
+    writeExtensionFile(extPathB, "wrap_tool_b");
+
+    const manifest = makeManifest([
+      { name: "wrap-a", path: extPathA },
+      { name: "wrap-b", path: extPathB },
+    ]);
+    const s = makeState(manifest);
+
+    // Activate sequentially to verify method restoration
+    await activateExtension("wrap-a", s, pi as any);
+    await activateExtension("wrap-b", s, pi as any);
+
+    // Both tools should be registered
+    expect(pi.getAllTools().some((t) => t.name === "wrap_tool_a")).toBe(true);
+    expect(pi.getAllTools().some((t) => t.name === "wrap_tool_b")).toBe(true);
+
+    // pi.registerTool should be the original function (not a wrapper)
+    expect(pi.registerTool.name).not.toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// session_start handler detection (Bug #11)
+// ---------------------------------------------------------------------------
+
+describe("session_start handler detection", () => {
+  let pi: MockPi;
+
+  beforeEach(() => {
+    pi = createMockPi();
+  });
+
+  it("detects when a lazy extension registers a session_start handler", async () => {
+    const d = tmpDir();
+    const extPath = join(d, "session-ext.js");
+    writeFileSync(extPath, [
+      "export default function (pi) {",
+      "  pi.on('session_start', async () => {});",
+      "  pi.registerTool({",
+      '    name: "session_tool",',
+      '    label: "Session Test",',
+      '    description: "Test",',
+      "    parameters: {},",
+      '    async execute() { return { content: [{ type: "text", text: "ok" }] }; }',
+      "  });",
+      "}",
+    ].join("\n"), "utf-8");
+
+    const manifest = makeManifest([{ name: "session-ext", path: extPath }]);
+    const s = makeState(manifest);
+
+    const result = await activateExtension("session-ext", s, pi as any);
+    expect(result.success).toBe(true);
+    expect(result.sessionStartWarning).toBe(true);
+  });
+
+  it("does not warn when extension has no session_start handler", async () => {
+    const d = tmpDir();
+    const extPath = join(d, "no-session-ext.js");
+    writeExtensionFile(extPath, "no_session_tool");
+
+    const manifest = makeManifest([{ name: "no-session-ext", path: extPath }]);
+    const s = makeState(manifest);
+
+    const result = await activateExtension("no-session-ext", s, pi as any);
+    expect(result.success).toBe(true);
+    expect(result.sessionStartWarning).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Duplicate tool name detection (Edge case #8)
+// ---------------------------------------------------------------------------
+
+describe("duplicate tool name detection", () => {
+  let pi: MockPi;
+
+  beforeEach(() => {
+    pi = createMockPi();
+  });
+
+  it("detects tool names that collide with already-registered tools", async () => {
+    const d = tmpDir();
+    const extPath = join(d, "dup-ext.js");
+    // Register a tool named "bash" — which is already a built-in tool in the mock
+    writeFileSync(extPath, [
+      "export default function (pi) {",
+      "  pi.registerTool({",
+      '    name: "bash",',
+      '    label: "Dup Bash",',
+      '    description: "Duplicate",',
+      "    parameters: {},",
+      '    async execute() { return { content: [{ type: "text", text: "ok" }] }; }',
+      "  });",
+      "}",
+    ].join("\n"), "utf-8");
+
+    const manifest = makeManifest([{ name: "dup-ext", path: extPath }]);
+    const s = makeState(manifest);
+
+    const result = await activateExtension("dup-ext", s, pi as any);
+    expect(result.success).toBe(true);
+    expect(result.duplicateTools).toContain("bash");
+    // The tool should NOT be in the actual registered list (first-registration wins)
+    expect(result.tools).not.toContain("bash");
+  });
+
+  it("reports no duplicates when all tool names are new", async () => {
+    const d = tmpDir();
+    const extPath = join(d, "unique-ext.js");
+    writeExtensionFile(extPath, "totally_unique_tool");
+
+    const manifest = makeManifest([{ name: "unique-ext", path: extPath }]);
+    const s = makeState(manifest);
+
+    const result = await activateExtension("unique-ext", s, pi as any);
+    expect(result.success).toBe(true);
+    expect(result.duplicateTools).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// idleTimer cleanup on idle-unload (Bug #4)
+// ---------------------------------------------------------------------------
+
+describe("idleTimer cleanup on idle-unload", () => {
+  it("clears idleTimer reference when idle-unloading", async () => {
+    vi.useFakeTimers();
+    const pi = createMockPi();
+
+    const d = tmpDir();
+    const extPath = join(d, "cleanup-ext.js");
+    writeExtensionFile(extPath, "cleanup_tool");
+
+    const manifest = makeManifest([{ name: "cleanup-ext", path: extPath }]);
+    const s = makeState(manifest);
+    s.pi = pi;
+
+    await activateExtension("cleanup-ext", s, pi as any);
+    const extState = s.extensions.get("cleanup-ext")!;
+    expect(extState.idleTimer).toBeDefined();
+
+    // Advance past idle timeout
+    vi.advanceTimersByTime(11 * 60 * 1000);
+
+    expect(extState.loaded).toBe(false);
+    expect(extState.idleTimer).toBeUndefined();
   });
 });

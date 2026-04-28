@@ -66,6 +66,7 @@ export default function lazyExtensions(pi: ExtensionAPI) {
     }
 
     state = buildState(result.manifest, result.path);
+    state.pi = pi;
 
     if (generation !== lifecycleGeneration) return;
 
@@ -163,7 +164,11 @@ export default function lazyExtensions(pi: ExtensionAPI) {
           }
           const result = await activateExtension(target, state, pi);
           if (result.success) {
-            if (ctx.hasUI) ctx.ui.notify(`✓ Activated "${target}"${result.tools?.length ? ` (${result.tools.length} tools)` : ""}`, "info");
+            const warnings: string[] = [];
+            if (result.duplicateTools?.length) warnings.push("duplicate tools");
+            if (result.sessionStartWarning) warnings.push("session_start won't fire");
+            const warnStr = warnings.length > 0 ? ` (⚠ ${warnings.join(", ")})` : "";
+            if (ctx.hasUI) ctx.ui.notify(`✓ Activated "${target}"${result.tools?.length ? ` (${result.tools.length} tools)` : ""}${warnStr}`, "info");
           } else {
             if (ctx.hasUI) ctx.ui.notify(`Failed to activate "${target}": ${result.error}`, "error");
           }

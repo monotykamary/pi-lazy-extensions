@@ -132,6 +132,20 @@ export interface LazyExtensionsState {
 
   /** Tracks recent activation failures to enforce backoff. */
   failureTracker: Map<string, number>;
+
+  /**
+   * Reference to the shared ExtensionAPI, set after buildState().
+   * Used by touchExtension() to reschedule idle timers without
+   * threading pi through every call site.
+   */
+  pi?: any;
+
+  /**
+   * Serialization lock for concurrent activations. Only one factory(pi)
+   * runs at a time to prevent method-wrapping races and tool-diff
+   * misattribution between concurrent activations of different extensions.
+   */
+  activationLock?: Promise<void>;
 }
 
 /** Result of activating an extension. */
@@ -147,4 +161,16 @@ export interface ActivationResult {
   /** Message renderer customTypes registered (informational — cannot be deactivated). */
   renderers?: string[];
   error?: string;
+  /**
+   * Tool names that were silently skipped due to "first registration wins".
+   * The factory called registerTool for these names, but another extension
+   * had already registered them.
+   */
+  duplicateTools?: string[];
+  /**
+   * True if the extension registered a session_start handler during factory(pi).
+   * Since the session has already started, this handler will not fire until
+   * the next session/reload, which may cause initialization issues.
+   */
+  sessionStartWarning?: boolean;
 }

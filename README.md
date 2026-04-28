@@ -112,8 +112,10 @@ After `ext({ activate: "todo" })`, the `todo` extension's tools become directly 
 
 - **No full unloading:** Once an extension's factory runs, its event handlers are permanent. Idle unloading only removes tools from the active set.
 - **Shortcuts, flags, and message renderers persist:** These registrations have no deactivate/remove API in the current ExtensionAPI. They remain active even after idle-unload. The `ext` status display shows counts of these for awareness.
-- **`sourceInfo` attribution:** Tools registered by lazy-loaded extensions will show the proxy extension's source info, not the original extension's. This is an SDK limitation — `pi.registerTool()` always tags tools with the caller extension's `sourceInfo`.
+- **`sourceInfo` attribution:** Tools registered by lazy-loaded extensions will show the `pi-lazy-extensions` extension's `sourceInfo`, not the original extension's. This is because `pi.registerTool()` stamps each tool with the `sourceInfo` of the *extension that made the call* — and since the lazy extension's factory receives the same `ExtensionAPI` as `pi-lazy-extensions`, all registered tools are attributed to `pi-lazy-extensions`. There is no SDK API to override this.
 - **`/ext` command vs `ext` tool:** The `/ext` command uses `ctx.ui.notify()` for output, which may truncate large results. For rich output (search results, detailed status), prefer the `ext` tool interface which renders properly in the TUI.
+- **`session_start` handlers never fire for the current session:** When a lazy extension is activated mid-session, any `session_start` handlers it registers will not fire until the next session or `/reload`. Extensions that depend on `session_start` for initialization (reading config, setting up state) may not work correctly when lazy-loaded. The `ext` tool displays a warning when this is detected.
+- **Duplicate tool names:** If a lazy extension registers a tool with the same name as an already-registered tool, pi's "first registration wins" policy silently skips it. The `ext` tool displays a warning when this is detected during activation.
 
 ## Example: Converting an Existing Extension
 

@@ -81,12 +81,36 @@ export async function activateExtension(
     };
   }
 
-  // Deduplicate concurrent activations
+  // Deduplicate concurrent activations of the same extension
   if (extState.activationPromise) {
     return extState.activationPromise;
   }
 
-  extState.activationPromise = performActivation(name, state, pi);
+  // Serialize activations to prevent method-wrapping races and
+  // tool-diff misattribution between concurrent factory(pi) calls
+  // for different extensions.
+  extState.activationPromise = (async () => {
+    // Wait for any in-progress activation of a different extension
+    while (state.activationLock) {
+      await state.activationLock;
+    }
+
+    // Acquire the lock
+    let releaseLock!: () => void;
+    const lockPromise = new Promise<void>((resolve) => { releaseLock = resolve; });
+    state.activationLock = lockPromise;
+
+    try {
+      return await performActivation(name, state, pi);
+    } finally {
+      releaseLock();
+      // Only clear if we're still the current lock
+      if (state.activationLock === lockPromise) {
+        state.activationLock = undefined;
+      }
+    }
+  })();
+
   try {
     const result = await extState.activationPromise;
     return result;
@@ -109,25 +133,42 @@ async function performActivation(
   const toolsBefore = new Set(pi.getAllTools().map((t: any) => t.name as string));
   const commandsBefore = new Set(pi.getCommands().map((c: any) => c.name as string));
 
-  // Wrap pi to intercept shortcuts, flags, and renderers registered
-  // during factory(pi) — the ExtensionAPI doesn't expose getters for these.
-  const registeredShortcuts: string[] = [];
-  const registeredFlags: string[] = [];
-  const registeredRenderers: string[] = [];
+  // Wrap pi to intercept registrations during factory(pi).
+  // The ExtensionAPI doesn't expose getters for shortcuts, flags,
+  // renderers, event subscriptions, or attempted tool names, so we
+  // intercept them. The serialization lock ensures only one factory
+  // runs at a time, making these wrappers safe against races.
+  const interceptedShortcuts: string[] = [];
+  const interceptedFlags: string[] = [];
+  const interceptedRenderers: string[] = [];
+  const interceptedTools: string[] = [];
+  const interceptedEvents: string[] = [];
+
   const origRegisterShortcut = (pi as any).registerShortcut?.bind(pi);
   const origRegisterFlag = (pi as any).registerFlag?.bind(pi);
   const origRegisterMessageRenderer = (pi as any).registerMessageRenderer?.bind(pi);
+  const origRegisterTool = pi.registerTool.bind(pi);
+  const origOn = pi.on.bind(pi);
+
   (pi as any).registerShortcut = (shortcut: string, options: any) => {
-    registeredShortcuts.push(shortcut);
+    interceptedShortcuts.push(shortcut);
     origRegisterShortcut?.(shortcut, options);
   };
-  (pi as any).registerFlag = (name: string, options: any) => {
-    registeredFlags.push(name);
-    origRegisterFlag?.(name, options);
+  (pi as any).registerFlag = (flagName: string, options: any) => {
+    interceptedFlags.push(flagName);
+    origRegisterFlag?.(flagName, options);
   };
   (pi as any).registerMessageRenderer = (customType: string, renderer: any) => {
-    registeredRenderers.push(customType);
+    interceptedRenderers.push(customType);
     origRegisterMessageRenderer?.(customType, renderer);
+  };
+  pi.registerTool = (tool: any) => {
+    interceptedTools.push(tool.name);
+    origRegisterTool(tool);
+  };
+  pi.on = (event: string, handler: any) => {
+    interceptedEvents.push(event);
+    origOn(event, handler);
   };
 
   const extPath = resolveExtensionPath(extState.config.path, state.baseDir);
@@ -146,7 +187,7 @@ async function performActivation(
     // This registers tools, events, commands, etc. into the same runtime.
     await factory(pi);
 
-    // Diff to find what this extension registered
+    // Diff to find what this extension actually registered
     const toolsAfter = pi.getAllTools().map((t: any) => t.name as string);
     const newTools = toolsAfter.filter(t => !toolsBefore.has(t));
     extState.registeredTools = newTools;
@@ -157,11 +198,17 @@ async function performActivation(
     extState.registeredCommands = newCommands;
 
     // Track shortcuts, flags, and renderers (informational — cannot be deactivated)
-    // Track shortcuts, flags, and renderers (informational — cannot be deactivated)
     // These were captured by our wrapped pi methods during factory(pi).
-    extState.registeredShortcuts = registeredShortcuts;
-    extState.registeredFlags = registeredFlags;
-    extState.registeredRenderers = registeredRenderers;
+    extState.registeredShortcuts = interceptedShortcuts;
+    extState.registeredFlags = interceptedFlags;
+    extState.registeredRenderers = interceptedRenderers;
+
+    // Detect duplicate tool names (silently skipped by "first registration wins")
+    const duplicateTools = interceptedTools.filter(t => toolsBefore.has(t));
+
+    // Detect session_start handlers — these won't fire for the current session
+    // since the session has already started. Warn the user.
+    const sessionStartWarning = interceptedEvents.includes("session_start");
 
     extState.loaded = true;
     extState.factoryCalled = true;
@@ -169,11 +216,6 @@ async function performActivation(
     extState.lastUsed = Date.now();
     extState.error = undefined;
     state.failureTracker.delete(name);
-
-    // Restore original pi methods
-    (pi as any).registerShortcut = origRegisterShortcut;
-    (pi as any).registerFlag = origRegisterFlag;
-    (pi as any).registerMessageRenderer = origRegisterMessageRenderer;
 
     // Start idle timer if configured
     scheduleIdleTimeout(name, state, pi);
@@ -183,20 +225,26 @@ async function performActivation(
       name,
       tools: newTools,
       commands: extState.registeredCommands,
-      shortcuts: registeredShortcuts,
-      flags: registeredFlags,
-      renderers: registeredRenderers,
+      shortcuts: interceptedShortcuts,
+      flags: interceptedFlags,
+      renderers: interceptedRenderers,
+      duplicateTools: duplicateTools.length > 0 ? duplicateTools : undefined,
+      sessionStartWarning: sessionStartWarning || undefined,
     };
   } catch (error) {
-    // Restore original pi methods on error too
-    (pi as any).registerShortcut = origRegisterShortcut;
-    (pi as any).registerFlag = origRegisterFlag;
-    (pi as any).registerMessageRenderer = origRegisterMessageRenderer;
-
     const message = error instanceof Error ? error.message : String(error);
     extState.error = message;
     state.failureTracker.set(name, Date.now());
     return { success: false, name, error: message };
+  } finally {
+    // Always restore original pi methods, even on early return (!factory)
+    // or thrown errors. Without this, stale wrappers would corrupt future
+    // activations.
+    (pi as any).registerShortcut = origRegisterShortcut;
+    (pi as any).registerFlag = origRegisterFlag;
+    (pi as any).registerMessageRenderer = origRegisterMessageRenderer;
+    pi.registerTool = origRegisterTool;
+    pi.on = origOn;
   }
 }
 
@@ -309,12 +357,19 @@ async function loadExtensionFactory(
 }
 
 /**
- * Touch an extension's last-used timestamp (resets idle timer).
+ * Touch an extension's last-used timestamp and reschedule idle timer.
+ * Resets the timer to a full idleTimeout from now, preventing the timer
+ * from firing early if the extension was recently used.
  */
 export function touchExtension(name: string, state: LazyExtensionsState): void {
   const extState = state.extensions.get(name);
   if (extState && extState.loaded) {
     extState.lastUsed = Date.now();
+    // Reschedule idle timer to start from now, preventing the timer
+    // from firing early if the extension was recently used.
+    if (state.pi) {
+      scheduleIdleTimeout(name, state, state.pi);
+    }
   }
 }
 
@@ -394,6 +449,7 @@ function idleUnloadExtension(name: string, state: LazyExtensionsState, pi: Exten
 
   extState.loaded = false;
   extState.lastActivated = undefined;
+  extState.idleTimer = undefined;
 }
 
 /**
@@ -407,9 +463,4 @@ export function clearAllTimers(state: LazyExtensionsState): void {
     }
   }
 }
-
-/**
- * Build a description string for the proxy tool that lists available
- * lazy extensions and their tool summaries.
- */
 
