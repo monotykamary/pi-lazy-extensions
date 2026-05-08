@@ -580,11 +580,11 @@ describe("jiti alias resolution", () => {
     expect(pi.getAllTools().some((t) => t.name === "typebox_tool")).toBe(true);
   });
 
-  it("loads a .ts extension that imports from @mariozechner/pi-coding-agent", async () => {
+  it("loads a .ts extension that imports from @earendil-works/pi-coding-agent", async () => {
     const d = tmpDir();
     const extPath = join(d, "sdk-import-ext.ts");
     writeFileSync(extPath, [
-      'import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";',
+      'import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";',
       "export default function (pi: ExtensionAPI) {",
       "  pi.registerTool({",
       '    name: "sdk_import_tool",',
@@ -605,12 +605,12 @@ describe("jiti alias resolution", () => {
     expect(result.tools).toContain("sdk_import_tool");
   });
 
-  it("loads a .ts extension that imports from @mariozechner/pi-tui", async () => {
+  it("loads a .ts extension that imports from @earendil-works/pi-tui", async () => {
     const d = tmpDir();
     const extPath = join(d, "tui-import-ext.ts");
     writeFileSync(extPath, [
-      'import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";',
-      'import { Text } from "@mariozechner/pi-tui";',
+      'import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";',
+      'import { Text } from "@earendil-works/pi-tui";',
       "export default function (pi: ExtensionAPI) {",
       "  pi.registerTool({",
       '    name: "tui_import_tool",',
@@ -766,11 +766,11 @@ describe("buildJitiAliases", () => {
     expect(result.tools).toContain("alias_check_tool");
   });
 
-  it("resolves @mariozechner/pi-coding-agent to an absolute path", async () => {
+  it("resolves @earendil-works/pi-coding-agent to an absolute path", async () => {
     const d = tmpDir();
     const extPath = join(d, "pi-pkg-alias.ts");
     writeFileSync(extPath, [
-      'import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";',
+      'import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";',
       "export default function (pi: ExtensionAPI) {",
       "  pi.registerTool({",
       '    name: "pi_pkg_alias_tool",',

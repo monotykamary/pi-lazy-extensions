@@ -5,7 +5,7 @@
  * LazyExtensionsManifest / LazyExtensionsState objects.
  */
 
-import type { ExtensionAPI, ToolInfo } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ToolInfo } from "@earendil-works/pi-coding-agent";
 import type {
   LazyExtensionConfig,
   LazyExtensionsManifest,

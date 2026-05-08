@@ -10,7 +10,7 @@
  *   3. The `ext` proxy tool lets the LLM discover and activate extensions
  */
 
-import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { loadManifest, buildState, getEagerExtensions } from "./config.js";
 import { activateExtension, clearAllTimers, touchExtension } from "./registry.js";

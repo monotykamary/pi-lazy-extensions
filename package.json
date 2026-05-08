@@ -31,7 +31,7 @@
     "typebox": "^1.1.24"
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*"
   },
   "scripts": {
     "test": "vitest run",

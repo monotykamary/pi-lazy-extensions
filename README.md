@@ -104,7 +104,7 @@ After `ext({ activate: "todo" })`, the `todo` extension's tools become directly 
 1. At startup, `pi-lazy-extensions` reads the manifest and registers the `ext` proxy tool
 2. **Eager** and **keep-alive** extensions are loaded immediately during `session_start`
 3. **Lazy** extensions stay unloaded — their metadata is available for search/discovery
-4. When the LLM (or user) calls `ext({ activate: "name" })`, the extension is dynamically loaded via jiti (with the same module alias map that pi's own loader uses, so `import { Type } from "typebox"` and `import type { ExtensionAPI } from "@mariozechner/pi-coding-agent"` work correctly), and its factory function is called with the shared `ExtensionAPI`
+4. When the LLM (or user) calls `ext({ activate: "name" })`, the extension is dynamically loaded via jiti (with the same module alias map that pi's own loader uses, so `import { Type } from "typebox"` and `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"` work correctly), and its factory function is called with the shared `ExtensionAPI`
 5. New tools registered by the activated extension appear immediately — no `/reload` needed
 6. After an idle timeout, lazy extensions are "soft unloaded" (their tools are deactivated)
 
@@ -153,10 +153,10 @@ This is an experiment. If the pattern proves useful, the goal is to propose a `p
 Lazy extensions are loaded via `@mariozechner/jiti` — the same TypeScript/ESM transpiler that pi uses for its own extension loader. The jiti instance is configured with the same alias map that pi builds internally, which resolves:
 
 - `typebox` (and `typebox/compile`, `typebox/value`)
-- `@mariozechner/pi-coding-agent`
-- `@mariozechner/pi-agent-core`
-- `@mariozechner/pi-tui`
-- `@mariozechner/pi-ai` (and `@mariozechner/pi-ai/oauth`)
+- `@earendil-works/pi-coding-agent`
+- `@earendil-works/pi-agent-core`
+- `@earendil-works/pi-tui`
+- `@earendil-works/pi-ai` (and `@earendil-works/pi-ai/oauth`)
 - `@sinclair/typebox` (legacy alias)
 
 This ensures lazy extensions can use the same imports as normally-loaded extensions. If jiti is unavailable (e.g. stripped from the runtime), the loader falls back to raw `import()`, which only works for `.js` files without SDK imports.

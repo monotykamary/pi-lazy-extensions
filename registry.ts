@@ -8,7 +8,7 @@
  * - Deduplication guards
  */
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ActivationResult, LazyExtensionsState } from "./types.js";
 import { resolveExtensionPath } from "./config.js";
 import { fileURLToPath } from "node:url";
@@ -251,13 +251,13 @@ async function performActivation(
 /**
  * Build the jiti alias map that mirrors pi's own extension loader.
  *
- * Pi bundles core packages (typebox, @mariozechner/pi-ai, etc.) and resolves
+ * Pi bundles core packages (typebox, @earendil-works/pi-ai, etc.) and resolves
  * them via aliases when loading extensions with jiti. Without these aliases,
  * extensions that `import { Type } from "typebox"` or import from
- * `@mariozechner/pi-coding-agent` will fail with module-not-found errors.
+ * `@earendil-works/pi-coding-agent` will fail with module-not-found errors.
  *
  * We resolve the same packages via import.meta.resolve() which works
- * because pi-lazy-extensions itself depends on @mariozechner/pi-coding-agent
+ * because pi-lazy-extensions itself depends on @earendil-works/pi-coding-agent
  * (the peer dependency is installed), and typebox is bundled by pi.
  */
 let _jitiAliases: Record<string, string> | undefined;
@@ -269,11 +269,11 @@ function buildJitiAliases(): Record<string, string> {
 
   // Core pi packages that extensions commonly import
   const piPackages = [
-    "@mariozechner/pi-coding-agent",
-    "@mariozechner/pi-agent-core",
-    "@mariozechner/pi-tui",
-    "@mariozechner/pi-ai",
-    "@mariozechner/pi-ai/oauth",
+    "@earendil-works/pi-coding-agent",
+    "@earendil-works/pi-agent-core",
+    "@earendil-works/pi-tui",
+    "@earendil-works/pi-ai",
+    "@earendil-works/pi-ai/oauth",
   ] as const;
 
   for (const pkg of piPackages) {
@@ -323,7 +323,7 @@ export function resetJitiAliases(): void {
  * then falls back to raw import() for .js files or when jiti is unavailable.
  *
  * Jiti is configured with the same alias map that pi's own extension loader
- * uses, so extensions can import from `typebox`, `@mariozechner/pi-coding-agent`,
+ * uses, so extensions can import from `typebox`, `@earendil-works/pi-coding-agent`,
  * etc. just like they would in a normally-loaded extension.
  */
 async function loadExtensionFactory(

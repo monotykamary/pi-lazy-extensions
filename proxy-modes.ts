@@ -5,7 +5,7 @@
  * analogous to pi-mcp-adapter's proxy-modes.ts.
  */
 
-import type { AgentToolResult, ToolInfo } from "@mariozechner/pi-coding-agent";
+import type { AgentToolResult, ToolInfo } from "@earendil-works/pi-coding-agent";
 import type { LazyExtensionsState } from "./types.js";
 import { activateExtension, touchExtension, getFailureAgeSeconds } from "./registry.js";
 
@@ -164,7 +164,7 @@ export function executeSearch(
 export async function executeActivate(
   state: LazyExtensionsState,
   name: string,
-  pi: import("@mariozechner/pi-coding-agent").ExtensionAPI,
+  pi: import("@earendil-works/pi-coding-agent").ExtensionAPI,
 ): Promise<ProxyToolResult> {
   const extState = state.extensions.get(name);
   if (!extState) {
