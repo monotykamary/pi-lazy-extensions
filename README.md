@@ -150,7 +150,7 @@ This is an experiment. If the pattern proves useful, the goal is to propose a `p
 
 ### Module Resolution
 
-Lazy extensions are loaded via `@mariozechner/jiti` — the same TypeScript/ESM transpiler that pi uses for its own extension loader. The jiti instance is configured with the same alias map that pi builds internally, which resolves:
+Lazy extensions are loaded via `jiti` — the same TypeScript/ESM transpiler that pi uses for its own extension loader. The jiti instance is configured with the same alias map that pi builds internally, which resolves:
 
 - `typebox` (and `typebox/compile`, `typebox/value`)
 - `@earendil-works/pi-coding-agent`

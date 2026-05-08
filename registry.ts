@@ -331,7 +331,7 @@ async function loadExtensionFactory(
 ): Promise<((pi: ExtensionAPI) => void | Promise<void>) | undefined> {
   // Attempt 1: jiti — handles .ts and provides SDK-compatible module aliases
   try {
-    const { createJiti } = await import("@mariozechner/jiti");
+    const { createJiti } = await import("jiti");
     const jiti = createJiti(import.meta.url, {
       moduleCache: false,
       alias: buildJitiAliases(),

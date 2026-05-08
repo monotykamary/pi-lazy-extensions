@@ -738,7 +738,7 @@ describe("buildJitiAliases", () => {
   });
 
   it("resolves typebox to an absolute path", async () => {
-    const { createJiti } = await import("@mariozechner/jiti");
+    const { createJiti } = await import("jiti");
     // Call loadExtensionFactory indirectly by activating an extension
     // that imports typebox — this exercises buildJitiAliases internally.
     // We verify the alias map works by testing a real extension load.
