@@ -1,16 +1,47 @@
-# pi-lazy-extensions
+<div align="center">
+
+# 🦥 pi-lazy-extensions
 
 Lazy-load [pi coding agent](https://pi.dev) extensions on demand via a ToolSearch-style proxy tool.
 
-**Problem:** Every extension in `~/.pi/agent/extensions/` loads at startup. If you have many extensions, they all register their tools, commands, and event handlers immediately — even if you rarely use them. This clutters the tool list and wastes resources.
+</div>
 
-**Solution:** `pi-lazy-extensions` registers a single `ext` proxy tool. The LLM discovers and activates extensions on demand, just like Anthropic's ToolSearch for MCP tools. Extensions stay unloaded until needed.
+---
+
+## The Problem
+
+Every extension in `~/.pi/agent/extensions/` loads at startup. If you have many extensions, they all register their tools, commands, and event handlers immediately — even if you rarely use them. This clutters the tool list and wastes resources.
+
+## The Solution
+
+`pi-lazy-extensions` registers a single `ext` proxy tool. The LLM discovers and activates extensions on demand, just like Anthropic's ToolSearch for MCP tools. Extensions stay unloaded until needed.
+
+```
+Startup: only eager extensions load
+    │
+    ▼
+┌─────────────┐
+│  ext tool   │  ← always available
+│  (pi-lazy)  │
+└──────┬──────┘
+       │
+       │ LLM calls ext({ activate: "todo" })
+       ▼
+┌─────────────┐
+│  todo ext   │  ← loaded on demand
+│  (lazy)     │     tools appear instantly
+└─────────────┘
+```
+
+---
 
 ## Install
 
 ```bash
 pi install npm:pi-lazy-extensions
 ```
+
+---
 
 ## Setup
 
@@ -77,6 +108,8 @@ The manifest is searched in this order:
 | `idleTimeout` | number | 10 | Minutes before unloading idle lazy extensions (0 = never) |
 | `eagerOverrides` | string | "" | Comma-separated extension names to force eager loading |
 
+---
+
 ## Usage
 
 ### Via the `ext` tool (LLM calls)
@@ -99,6 +132,8 @@ After `ext({ activate: "todo" })`, the `todo` extension's tools become directly 
 /ext tools todo                → List extension tools
 ```
 
+---
+
 ## How It Works
 
 1. At startup, `pi-lazy-extensions` reads the manifest and registers the `ext` proxy tool
@@ -108,6 +143,8 @@ After `ext({ activate: "todo" })`, the `todo` extension's tools become directly 
 5. New tools registered by the activated extension appear immediately — no `/reload` needed
 6. After an idle timeout, lazy extensions are "soft unloaded" (their tools are deactivated)
 
+---
+
 ### Limitations
 
 - **No full unloading:** Once an extension's factory runs, its event handlers are permanent. Idle unloading only removes tools from the active set.
@@ -116,6 +153,8 @@ After `ext({ activate: "todo" })`, the `todo` extension's tools become directly 
 - **`/ext` command vs `ext` tool:** The `/ext` command uses `ctx.ui.notify()` for output, which may truncate large results. For rich output (search results, detailed status), prefer the `ext` tool interface which renders properly in the TUI.
 - **`session_start` handlers never fire for the current session:** When a lazy extension is activated mid-session, any `session_start` handlers it registers will not fire until the next session or `/reload`. Extensions that depend on `session_start` for initialization (reading config, setting up state) may not work correctly when lazy-loaded. The `ext` tool displays a warning when this is detected.
 - **Duplicate tool names:** If a lazy extension registers a tool with the same name as an already-registered tool, pi's "first registration wins" policy silently skips it. The `ext` tool displays a warning when this is detected during activation.
+
+---
 
 ## Example: Converting an Existing Extension
 
@@ -143,6 +182,8 @@ After (lazy loaded):
 }
 ```
 3. Rename or remove the original from auto-discovery (add a `.bak` suffix or move it out of `~/.pi/agent/extensions/`) so it isn't loaded eagerly by pi itself
+
+---
 
 ## Motivation
 
