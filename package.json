@@ -28,11 +28,11 @@
     "LICENSE"
   ],
   "dependencies": {
-    "jiti": "^2.7.0",
-    "typebox": "^1.1.24"
+    "jiti": "2.7.0",
+    "typebox": "1.1.38"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": ">=0.74.0"
   },
   "scripts": {
     "test": "vitest run",
@@ -42,12 +42,18 @@
     "lint:dead": "knip --no-gitignore"
   },
   "devDependencies": {
-    "@commitlint/cli": "^20.5.2",
-    "@commitlint/config-conventional": "^20.5.0",
-    "@types/node": "^20.0.0",
-    "@vitest/coverage-v8": "^4.1.5",
-    "knip": "^6.7.0",
-    "typescript": "^5.0.0",
-    "vitest": "^4.1.5"
+    "@commitlint/cli": "21.0.1",
+    "@commitlint/config-conventional": "21.0.1",
+    "@types/node": "25.9.1",
+    "@vitest/coverage-v8": "4.1.7",
+    "knip": "6.14.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.7"
+  },
+  "overrides": {
+    "brace-expansion": "5.0.6",
+    "fast-xml-builder": "1.2.0",
+    "protobufjs": "8.4.0",
+    "ws": "8.20.1"
   }
 }
