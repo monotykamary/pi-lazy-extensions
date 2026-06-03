@@ -2,9 +2,16 @@
 
 # 🦥 pi-lazy-extensions
 
-Lazy-load [pi coding agent](https://pi.dev) extensions on demand via a ToolSearch-style proxy tool.
+**Lazy-load [pi](https://github.com/earendil-works/pi-coding-agent) extensions on demand**
+
+_ToolSearch-style proxy tool — extensions only load when you need them._
+
+[![pi extension](https://img.shields.io/badge/pi-extension-blueviolet)](https://github.com/earendil-works/pi-coding-agent)
+[![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
 </div>
+
+---
 
 ---
 
