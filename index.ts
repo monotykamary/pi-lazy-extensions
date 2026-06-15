@@ -181,19 +181,22 @@ export default function lazyExtensions(pi: ExtensionAPI) {
             return;
           }
           const result = executeSearch(state, query);
-          if (ctx.hasUI) ctx.ui.notify(result.content[0]?.text ?? "No results", "info");
+          const msg = result.content[0]?.type === "text" ? result.content[0].text : undefined;
+          if (ctx.hasUI) ctx.ui.notify(msg ?? "No results", "info");
           break;
         }
         case "tools": {
           const result = executeListTools(state, target, getPiTools);
-          if (ctx.hasUI) ctx.ui.notify(result.content[0]?.text ?? "No tools", "info");
+          const msg = result.content[0]?.type === "text" ? result.content[0].text : undefined;
+          if (ctx.hasUI) ctx.ui.notify(msg ?? "No tools", "info");
           break;
         }
         case "status":
         case "":
         default: {
           const result = executeStatus(state);
-          if (ctx.hasUI) ctx.ui.notify(result.content[0]?.text ?? "No status", "info");
+          const msg = result.content[0]?.type === "text" ? result.content[0].text : undefined;
+          if (ctx.hasUI) ctx.ui.notify(msg ?? "No status", "info");
           break;
         }
       }
