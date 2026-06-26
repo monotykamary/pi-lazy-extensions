@@ -10,7 +10,7 @@
  *   3. The `ext` proxy tool lets the LLM discover and activate extensions
  */
 
-import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, type ExtensionAPI, type ExtensionContext, type ToolInfo } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { loadManifest, buildState, getEagerExtensions } from "./config.js";
 import { activateExtension, clearAllTimers, touchExtension } from "./registry.js";
@@ -28,7 +28,7 @@ export default function lazyExtensions(pi: ExtensionAPI) {
   let lifecycleGeneration = 0;
 
   const getPiTools = (): ToolInfo[] => pi.getAllTools();
-  const agentDir = process.env.PI_AGENT_DIR ?? process.env.PI_CODING_AGENT_DIR ?? `${process.env.HOME}/.pi/agent`;
+  const agentDir = getAgentDir();
 
   // Check for tool name collision before registering the proxy tool.
   // Pi uses "first registration wins" — if another extension already
