@@ -8,6 +8,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { CONFIG_DIR_NAME } from "@earendil-works/pi-coding-agent";
 import type { LazyExtensionConfig, LazyExtensionsManifest, LazyExtensionsState, LoadedExtensionState } from "./types.js";
 
 /**
@@ -26,8 +27,9 @@ export function loadManifest(cwd: string, agentDir: string): { manifest: LazyExt
     if (manifest) return { manifest, path: resolve(envPath) };
   }
 
-  // Project .pi dir
-  const projectPi = join(cwd, ".pi", "lazy-extensions.json");
+  // Project "dot-pi" dir (uses CONFIG_DIR_NAME so rebranded pi distributions
+  // use their configured config dir name instead of hardcoded .pi)
+  const projectPi = join(cwd, CONFIG_DIR_NAME, "lazy-extensions.json");
   if (existsSync(projectPi)) {
     const manifest = parseManifest(projectPi);
     if (manifest) return { manifest, path: projectPi };
