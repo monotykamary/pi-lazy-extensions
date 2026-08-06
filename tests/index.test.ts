@@ -659,3 +659,55 @@ describe("ext tool name collision", () => {
     consoleSpy.mockRestore();
   });
 });
+
+describe("uninitialized extension runtime (pi >= 0.81.1)", () => {
+  const notInitialized = () => {
+    throw new Error(
+      "Extension runtime not initialized. Action methods cannot be called during extension loading.",
+    );
+  };
+
+  it("does not crash during factory load when getAllTools throws", async () => {
+    const pi = createMockPi();
+    pi.getAllTools = notInitialized;
+    const factory = await loadExtension();
+
+    expect(() => factory(pi as any)).not.toThrow();
+    expect(pi._registeredTools).toContain("ext");
+  });
+
+  it("defers the collision warning to session_start when runtime is unbound at load", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const pi = createMockPi({
+      tools: [
+        {
+          name: "ext",
+          description: "Pre-existing ext tool",
+          parameters: {} as any,
+          sourceInfo: { path: "<other>", source: "extension", scope: "temporary", origin: "top-level" },
+        },
+      ],
+      activeTools: ["ext"],
+    });
+    const boundGetAllTools = pi.getAllTools;
+    pi.getAllTools = notInitialized;
+    const factory = await loadExtension();
+
+    factory(pi as any);
+    expect(consoleSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("another extension already registered a tool named 'ext'"),
+    );
+
+    // Runtime bound by session_start — collision check retries and warns.
+    pi.getAllTools = boundGetAllTools;
+    const handler = getHandler(pi, "session_start");
+    await handler!({}, makeCtx({ cwd: tmpDir() }));
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining("another extension already registered a tool named 'ext'"),
+    );
+
+    consoleSpy.mockRestore();
+  });
+});

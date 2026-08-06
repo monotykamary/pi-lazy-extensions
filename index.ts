@@ -27,23 +27,47 @@ export default function lazyExtensions(pi: ExtensionAPI) {
   let initPromise: Promise<void> | null = null;
   let lifecycleGeneration = 0;
 
-  const getPiTools = (): ToolInfo[] => pi.getAllTools();
+  // pi >= 0.81.1 throws from action methods while the extension runtime is
+  // still uninitialized during extension loading, so degrade to an empty list.
+  const getPiTools = (): ToolInfo[] => {
+    try {
+      return pi.getAllTools();
+    } catch {
+      return [];
+    }
+  };
   const agentDir = getAgentDir();
 
   // Check for tool name collision before registering the proxy tool.
   // Pi uses "first registration wins" — if another extension already
   // registered a tool named "ext", our proxy would be silently skipped.
-  const existingTools = pi.getAllTools();
-  if (existingTools.some(t => t.name === "ext")) {
-    console.error(
-      "pi-lazy-extensions: another extension already registered a tool named 'ext'. " +
-      "The proxy tool will not be available. Use the /ext command instead, " +
-      "or remove the conflicting extension."
-    );
-  }
+  // The runtime may not be bound yet at factory time (pi >= 0.81.1), in which
+  // case the check is retried on session_start once the runtime is ready.
+  let collisionChecked = false;
+  const checkExtCollision = () => {
+    if (collisionChecked) return;
+    let existingTools: ToolInfo[];
+    try {
+      existingTools = pi.getAllTools();
+    } catch {
+      return;
+    }
+    collisionChecked = true;
+    if (existingTools.some(t => t.name === "ext")) {
+      console.error(
+        "pi-lazy-extensions: another extension already registered a tool named 'ext'. " +
+        "The proxy tool will not be available. Use the /ext command instead, " +
+        "or remove the conflicting extension."
+      );
+    }
+  };
+  checkExtCollision();
 
   pi.on("session_start", async (_event, ctx) => {
     const generation = ++lifecycleGeneration;
+
+    // Retry the collision check now that the extension runtime is bound.
+    checkExtCollision();
 
     // Clear previous state
     if (state) {
