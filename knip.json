@@ -1,7 +1,12 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": ["index.ts"],
+  "entry": [
+    "index.ts"
+  ],
   "ignoreExportsUsedInFile": true,
-  "ignoreDependencies": ["@commitlint/cli", "@earendil-works/pi-server", "jiti"],
+  "ignoreDependencies": [
+    "@commitlint/cli",
+    "jiti"
+  ],
   "ignore": []
 }

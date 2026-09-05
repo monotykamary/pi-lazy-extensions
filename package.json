@@ -1,6 +1,6 @@
 {
   "name": "pi-lazy-extensions",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Lazy-load pi extensions on demand via a ToolSearch-style proxy tool",
   "type": "module",
   "license": "MIT",
@@ -44,18 +44,18 @@
   "devDependencies": {
     "@commitlint/cli": "21.0.1",
     "@commitlint/config-conventional": "21.0.1",
-    "@earendil-works/pi-server": "0.85.0",
     "@types/node": "25.9.1",
     "@vitest/coverage-v8": "4.1.7",
     "knip": "6.14.1",
     "typescript": "6.0.3",
-    "vitest": "4.1.7"
+    "vitest": "4.1.7",
+    "@earendil-works/pi-coding-agent": "0.85.1"
   },
   "overrides": {
     "brace-expansion": "5.0.6",
     "fast-xml-builder": "1.2.0",
     "protobufjs": "8.4.0",
     "ws": "8.20.1",
-    "@earendil-works/pi-coding-agent": "0.85.0"
+    "@earendil-works/pi-coding-agent": "0.85.1"
   }
 }
