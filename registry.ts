@@ -166,10 +166,13 @@ async function performActivation(
     interceptedTools.push(tool.name);
     origRegisterTool(tool);
   };
-  pi.on = (event: string, handler: any) => {
+  // 0.86.0: pi.on returns an unsubscribe function and its event name is a
+  // closed overload set, so the generic string-typed proxy is asserted to
+  // ExtensionAPI["on"]. The `never` cast lets the bound overload set resolve.
+  pi.on = ((event: string, handler: any) => {
     interceptedEvents.push(event);
-    origOn(event, handler);
-  };
+    return origOn(event as never, handler);
+  }) as ExtensionAPI["on"];
 
   const extPath = resolveExtensionPath(extState.config.path, state.baseDir);
 
