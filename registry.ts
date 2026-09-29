@@ -11,7 +11,16 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ActivationResult, LazyExtensionsState } from "./types.js";
 import { resolveExtensionPath } from "./config.js";
-import { fileURLToPath } from "node:url";
+// These imports are mapped by Pi to its live modules (including bundled CLI).
+import * as hostCodingAgent from "@earendil-works/pi-coding-agent";
+import * as hostAgentCore from "@earendil-works/pi-agent-core";
+import * as hostAi from "@earendil-works/pi-ai/compat";
+import * as hostOauth from "@earendil-works/pi-ai/oauth";
+import * as hostProviders from "@earendil-works/pi-ai/providers/all";
+import * as hostTui from "@earendil-works/pi-tui";
+import * as hostTypebox from "typebox";
+import * as hostCompile from "typebox/compile";
+import * as hostValue from "typebox/value";
 
 const FAILURE_BACKOFF_MS = 60 * 1000;
 
@@ -47,8 +56,11 @@ export async function activateExtension(
   // factory(pi) call.
   if (extState.factoryCalled) {
     const currentActive = new Set(pi.getActiveTools());
+    for (const definition of extState.toolDefinitions ?? []) {
+      if (definition.exposure === "codemode" || definition.exposure === "deferred") pi.registerTool(definition);
+    }
     const restored: string[] = [];
-    for (const toolName of extState.registeredTools) {
+    for (const toolName of extState.activeBeforeUnload ?? extState.registeredTools) {
       if (!currentActive.has(toolName)) {
         restored.push(toolName);
       }
@@ -142,6 +154,7 @@ async function performActivation(
   const interceptedFlags: string[] = [];
   const interceptedRenderers: string[] = [];
   const interceptedTools: string[] = [];
+  const definitions = new Map<string, Parameters<ExtensionAPI["registerTool"]>[0]>();
   const interceptedEvents: string[] = [];
 
   const origRegisterShortcut = (pi as any).registerShortcut?.bind(pi);
@@ -164,6 +177,10 @@ async function performActivation(
   };
   pi.registerTool = (tool: any) => {
     interceptedTools.push(tool.name);
+    // Lazy factories share our API owner. In 0.99 re-registering would replace
+    // that owner's tool, not silently lose a collision; preserve existing tools.
+    if (toolsBefore.has(tool.name)) return;
+    definitions.set(tool.name, tool);
     origRegisterTool(tool);
   };
   // 0.86.0: pi.on returns an unsubscribe function and its event name is a
@@ -194,6 +211,7 @@ async function performActivation(
     const toolsAfter = pi.getAllTools().map((t: any) => t.name as string);
     const newTools = toolsAfter.filter(t => !toolsBefore.has(t));
     extState.registeredTools = newTools;
+    extState.toolDefinitions = newTools.flatMap(name => definitions.has(name) ? [definitions.get(name)!] : []);
 
     // Diff commands the same way
     const commandsAfter = pi.getCommands().map((c: any) => c.name as string);
@@ -251,73 +269,32 @@ async function performActivation(
   }
 }
 
-/**
- * Build the jiti alias map that mirrors pi's own extension loader.
- *
- * Pi bundles core packages (typebox, @earendil-works/pi-ai, etc.) and resolves
- * them via aliases when loading extensions with jiti. Without these aliases,
- * extensions that `import { Type } from "typebox"` or import from
- * `@earendil-works/pi-coding-agent` will fail with module-not-found errors.
- *
- * We resolve the same packages via import.meta.resolve() which works
- * because pi-lazy-extensions itself depends on @earendil-works/pi-coding-agent
- * (the peer dependency is installed), and typebox is bundled by pi.
- */
-let _jitiAliases: Record<string, string> | undefined;
-
-function buildJitiAliases(): Record<string, string> {
-  if (_jitiAliases) return _jitiAliases;
-
-  const aliases: Record<string, string> = {};
-
-  // Core pi packages that extensions commonly import
-  const piPackages = [
-    "@earendil-works/pi-coding-agent",
-    "@earendil-works/pi-agent-core",
-    "@earendil-works/pi-tui",
-    "@earendil-works/pi-ai",
-    "@earendil-works/pi-ai/oauth",
-  ] as const;
-
-  for (const pkg of piPackages) {
-    try {
-      aliases[pkg] = fileURLToPath(import.meta.resolve(pkg));
-    } catch {
-      // Package not available in this environment — skip
-    }
+/** Reuse the exact host objects, not a second installation beside a bundled
+ * CLI. Virtual modules also work when managed host peers are not on disk. */
+let hostModules: Record<string, unknown> | undefined;
+function getHostModules(): Record<string, unknown> {
+  if (hostModules) return hostModules;
+  hostModules = {
+    "@earendil-works/pi-coding-agent": hostCodingAgent,
+    "@earendil-works/pi-agent-core": hostAgentCore,
+    "@earendil-works/pi-ai": hostAi,
+    "@earendil-works/pi-ai/compat": hostAi,
+    "@earendil-works/pi-ai/oauth": hostOauth,
+    "@earendil-works/pi-ai/providers/all": hostProviders,
+    "@earendil-works/pi-tui": hostTui,
+    typebox: hostTypebox, "typebox/compile": hostCompile, "typebox/value": hostValue,
+    "@sinclair/typebox": hostTypebox,
+    "@sinclair/typebox/compile": hostCompile,
+    "@sinclair/typebox/value": hostValue,
+  };
+  for (const [key, value] of Object.entries(hostModules)) {
+    if (key.startsWith("@earendil-works/pi-")) hostModules[key.replace("@earendil-works/", "@mariozechner/")] = value;
   }
-
-  // typebox and its subpath exports (most extensions use `import { Type } from "typebox"`)
-  const typeboxSpecs = ["typebox", "typebox/compile", "typebox/value"] as const;
-  for (const spec of typeboxSpecs) {
-    try {
-      aliases[spec] = fileURLToPath(import.meta.resolve(spec));
-    } catch {
-      // typebox not available — skip
-    }
-  }
-
-  // Alias legacy @sinclair/typebox to the same entries (some extensions still use it)
-  if (aliases["typebox"]) {
-    aliases["@sinclair/typebox"] = aliases["typebox"];
-  }
-  if (aliases["typebox/compile"]) {
-    aliases["@sinclair/typebox/compile"] = aliases["typebox/compile"];
-  }
-  if (aliases["typebox/value"]) {
-    aliases["@sinclair/typebox/value"] = aliases["typebox/value"];
-  }
-
-  _jitiAliases = aliases;
-  return aliases;
+  return hostModules;
 }
 
-/**
- * Reset cached jiti aliases (for testing or after module changes).
- */
-export function resetJitiAliases(): void {
-  _jitiAliases = undefined;
-}
+/** Retained test/public reset name; the cache now holds host virtual modules. */
+export function resetJitiAliases(): void { hostModules = undefined; }
 
 /**
  * Load an extension module and extract its default factory function.
@@ -325,9 +302,8 @@ export function resetJitiAliases(): void {
  * Tries jiti first (for TypeScript support and module alias resolution),
  * then falls back to raw import() for .js files or when jiti is unavailable.
  *
- * Jiti is configured with the same alias map that pi's own extension loader
- * uses, so extensions can import from `typebox`, `@earendil-works/pi-coding-agent`,
- * etc. just like they would in a normally-loaded extension.
+ * Jiti receives the same live module objects as Pi's own extension loader,
+ * so lazy imports preserve class identity in both SDK and bundled CLI hosts.
  */
 async function loadExtensionFactory(
   extPath: string,
@@ -337,7 +313,8 @@ async function loadExtensionFactory(
     const { createJiti } = await import("jiti");
     const jiti = createJiti(import.meta.url, {
       moduleCache: false,
-      alias: buildJitiAliases(),
+      virtualModules: getHostModules(),
+      tryNative: false,
     });
     const mod = await jiti.import(extPath, { default: true });
     if (typeof mod === "function") {
@@ -447,7 +424,15 @@ function idleUnloadExtension(name: string, state: LazyExtensionsState, pi: Exten
   // Keep extState.registeredTools intact so reactivation can restore them
   // without re-calling factory(pi) (which would double-register event handlers).
   const activeTools = pi.getActiveTools();
+  extState.activeBeforeUnload = activeTools.filter(t => extState.registeredTools.includes(t));
   const remaining = activeTools.filter(t => !extState.registeredTools.includes(t));
+  // Removing an active name does not withdraw codemode/deferred tools in 0.99.
+  // Hidden exposure also removes them from ctx.tools / native nested dispatch.
+  for (const definition of extState.toolDefinitions ?? []) {
+    if (definition.exposure === "codemode" || definition.exposure === "deferred") {
+      pi.registerTool({ ...definition, exposure: "hidden" });
+    }
+  }
   pi.setActiveTools(remaining);
 
   extState.loaded = false;

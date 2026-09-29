@@ -15,6 +15,14 @@ _ToolSearch-style proxy tool — extensions only load when you need them._
 
 ---
 
+## Pi 0.99 compatibility (0.1.11)
+
+Tested with Pi **0.99.0**. Host-provided Pi packages and TypeBox are peers (`*`), not bundled runtime dependencies; development uses exact Pi 0.99.0 pins and host-compatible TypeBox where needed.
+
+Lazy modules reuse Pi's exact extension-loader virtual modules (SDK and bundled CLI), including import-only ESM/compat exports; they never import a second physical copy of the host runtime. Idle unload withdraws `codemode`/`deferred` tools with native `hidden` exposure; reactivation restores their original exposure without rerunning factories.
+
+Run `bun run test:host` for the offline real-host load, native codemode/nested-call, module-identity and reload checks. Set `PI99_HOST_PACKAGE` to an installed Pi package directory to test that host explicitly; add `PI99_HOST_ENTRY=bundle` to check the bundled CLI runtime's constructors.
+
 ## The Problem
 
 Every extension in `~/.pi/agent/extensions/` loads at startup. If you have many extensions, they all register their tools, commands, and event handlers immediately — even if you rarely use them. This clutters the tool list and wastes resources.
@@ -154,12 +162,12 @@ After `ext({ activate: "todo" })`, the `todo` extension's tools become directly 
 
 ### Limitations
 
-- **No full unloading:** Once an extension's factory runs, its event handlers are permanent. Idle unloading only removes tools from the active set.
+- **No full unloading:** Idle unloading does not unsubscribe the extension's handlers. Direct tools leave the active set; codemode/deferred tools are re-registered as hidden so native nested dispatch cannot reach them.
 - **Shortcuts, flags, and message renderers persist:** These registrations have no deactivate/remove API in the current ExtensionAPI. They remain active even after idle-unload. The `ext` status display shows counts of these for awareness.
 - **`sourceInfo` attribution:** Tools registered by lazy-loaded extensions will show the `pi-lazy-extensions` extension's `sourceInfo`, not the original extension's. This is because `pi.registerTool()` stamps each tool with the `sourceInfo` of the *extension that made the call* — and since the lazy extension's factory receives the same `ExtensionAPI` as `pi-lazy-extensions`, all registered tools are attributed to `pi-lazy-extensions`. There is no SDK API to override this.
 - **`/ext` command vs `ext` tool:** The `/ext` command uses `ctx.ui.notify()` for output, which may truncate large results. For rich output (search results, detailed status), prefer the `ext` tool interface which renders properly in the TUI.
 - **`session_start` handlers never fire for the current session:** When a lazy extension is activated mid-session, any `session_start` handlers it registers will not fire until the next session or `/reload`. Extensions that depend on `session_start` for initialization (reading config, setting up state) may not work correctly when lazy-loaded. The `ext` tool displays a warning when this is detected.
-- **Duplicate tool names:** If a lazy extension registers a tool with the same name as an already-registered tool, pi's "first registration wins" policy silently skips it. The `ext` tool displays a warning when this is detected during activation.
+- **Duplicate tool names:** The loader skips names already registered before activation and reports a warning. This guard matters in Pi 0.99: tools sharing our API owner would otherwise replace each other on re-registration.
 
 ---
 
@@ -204,7 +212,7 @@ Lazy extensions are loaded via `jiti` — the same TypeScript/ESM transpiler tha
 - `@earendil-works/pi-coding-agent`
 - `@earendil-works/pi-agent-core`
 - `@earendil-works/pi-tui`
-- `@earendil-works/pi-ai` (and `@earendil-works/pi-ai/oauth`)
+- `@earendil-works/pi-ai` (mapped to the host compat entrypoint), `/compat`, `/oauth`, and `/providers/all`
 - `@sinclair/typebox` (legacy alias)
 
 This ensures lazy extensions can use the same imports as normally-loaded extensions. If jiti is unavailable (e.g. stripped from the runtime), the loader falls back to raw `import()`, which only works for `.js` files without SDK imports.

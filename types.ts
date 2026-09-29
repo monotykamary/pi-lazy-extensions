@@ -2,6 +2,8 @@
  * Types for the pi-lazy-extensions package.
  */
 
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+
 /** Lifecycle mode for a lazy extension. */
 export type ExtensionLifecycle = "lazy" | "eager" | "keep-alive";
 
@@ -84,6 +86,12 @@ export interface LoadedExtensionState {
 
   /** Names of tools registered by this extension (populated after load). */
   registeredTools: string[];
+
+  /** Original definitions, retained to withdraw callable tools with native hidden exposure. */
+  toolDefinitions?: ToolDefinition[];
+
+  /** Model declarations selected immediately before idle withdrawal. */
+  activeBeforeUnload?: string[];
 
   /** Names of commands registered by this extension (populated after load). */
   registeredCommands: string[];

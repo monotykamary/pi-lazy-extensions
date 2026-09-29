@@ -53,7 +53,7 @@ export default function lazyExtensions(pi: ExtensionAPI) {
       return;
     }
     collisionChecked = true;
-    if (existingTools.some(t => t.name === "ext")) {
+    if (existingTools.some(t => t.name === "ext" && t.description !== PROXY_TOOL_DESCRIPTION)) {
       console.error(
         "pi-lazy-extensions: another extension already registered a tool named 'ext'. " +
         "The proxy tool will not be available. Use the /ext command instead, " +
