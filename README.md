@@ -15,13 +15,20 @@ _ToolSearch-style proxy tool — extensions only load when you need them._
 
 ---
 
+## Pi 1.0 compatibility (0.1.12)
+
+Tested against Pi **1.0.0** with exact SDK development pins and wildcard host peers.
+Lazy entrypoints now force Jiti transpilation: native ESM must not bypass mapped host constructors. Failed entrypoint evaluation is not retried with native import, and API interception restores exact original methods. Host probes cover TS/ESM identity, callable-only idle withdrawal/reactivation and native nested execution.
+
+Run `bun run test:host` for the offline real-host regression. Set `PI1_HOST_PACKAGE` to an installed Pi package directory and `PI1_HOST_ENTRY=bundle` to test its bundled CLI runtime.
+
 ## Pi 0.99 compatibility (0.1.11)
 
 Tested with Pi **0.99.0**. Host-provided Pi packages and TypeBox are peers (`*`), not bundled runtime dependencies; development uses exact Pi 0.99.0 pins and host-compatible TypeBox where needed.
 
 Lazy modules reuse Pi's exact extension-loader virtual modules (SDK and bundled CLI), including import-only ESM/compat exports; they never import a second physical copy of the host runtime. Idle unload withdraws `codemode`/`deferred` tools with native `hidden` exposure; reactivation restores their original exposure without rerunning factories.
 
-Run `bun run test:host` for the offline real-host load, native codemode/nested-call, module-identity and reload checks. Set `PI99_HOST_PACKAGE` to an installed Pi package directory to test that host explicitly; add `PI99_HOST_ENTRY=bundle` to check the bundled CLI runtime's constructors.
+Run `bun run test:host` for the offline real-host load, native codemode/nested-call, module-identity and reload checks. Set `PI1_HOST_PACKAGE` to an installed Pi package directory to test that host explicitly; add `PI1_HOST_ENTRY=bundle` to check the bundled CLI runtime's constructors.
 
 ## The Problem
 

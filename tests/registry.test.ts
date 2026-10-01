@@ -546,6 +546,21 @@ describe("clearAllTimers", () => {
 // ---------------------------------------------------------------------------
 
 describe("jiti alias resolution", () => {
+  it.each(["ts", "mjs"])("preserves the original %s evaluation error without retrying native import", async (ext) => {
+    const path = join(tmpDir(), `throwing.${ext}`);
+    const key = `pi-lazy-failure-${path}`;
+    writeFileSync(path, `globalThis[Symbol.for(${JSON.stringify(key)})] = (globalThis[Symbol.for(${JSON.stringify(key)})] ?? 0) + 1; throw new Error('mapped evaluation failed');`);
+    const api = createMockPi();
+    const originals = [api.on, api.registerTool, api.registerShortcut, api.registerFlag, api.registerMessageRenderer];
+    const state = makeState(makeManifest([{ name: "failure", path }]));
+    try {
+      const result = await activateExtension("failure", state, api as any);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("mapped evaluation failed");
+      expect((globalThis as any)[Symbol.for(key)]).toBe(1);
+      expect([api.on, api.registerTool, api.registerShortcut, api.registerFlag, api.registerMessageRenderer]).toEqual(originals);
+    } finally { delete (globalThis as any)[Symbol.for(key)]; clearAllTimers(state); }
+  });
   let pi: MockPi;
 
   beforeEach(() => {

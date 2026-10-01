@@ -1,5 +1,5 @@
-// Offline Pi 0.99 load/lifecycle + native nested-tool/loadout regression.
-// PI99_HOST_PACKAGE may point at the installed host rather than local dev deps.
+// Offline Pi 1.0 load/lifecycle + native nested-tool/loadout regression.
+// PI1_HOST_PACKAGE may point at the installed host rather than local dev deps.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { findPackageJSON } from 'node:module';
@@ -8,55 +8,61 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const manifest = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8'));
-const scratch = resolve(process.env.PI99_SCRATCH ?? join(repo, '.tmp'));
+const scratch = resolve(process.env.PI1_SCRATCH ?? join(repo, '.tmp'));
 mkdirSync(scratch, { recursive: true });
-const root = mkdtempSync(join(scratch, 'pi99-'));
+const root = mkdtempSync(join(scratch, 'pi1-'));
 const agentDir = join(root, 'agent');
 mkdirSync(agentDir);
 mkdirSync(join(root, '.pi'));
 process.env.PI_CODING_AGENT_DIR = agentDir;
-const host = process.env.PI99_HOST_PACKAGE;
-const hostEntry = process.env.PI99_HOST_ENTRY === 'bundle' ? 'dist/bundle/index.js' : 'dist/index.js';
+const host = process.env.PI1_HOST_PACKAGE;
+const hostEntry = process.env.PI1_HOST_ENTRY === 'bundle' ? 'dist/bundle/index.js' : 'dist/index.js';
 const sdk = await import(host ? pathToFileURL(join(host, hostEntry)).href : '@earendil-works/pi-coding-agent');
 const localSdkUrl = import.meta.resolve('@earendil-works/pi-coding-agent');
 const localSdk = await import(localSdkUrl);
-assert.equal(localSdk.VERSION, '0.99.0', 'resolved development SDK VERSION');
-assert.equal(sdk.VERSION, '0.99.0', 'executing host VERSION');
+assert.equal(localSdk.VERSION, '1.0.0', 'resolved development SDK VERSION');
+assert.equal(sdk.VERSION, '1.0.0', 'executing host VERSION');
 const typeboxPackage = findPackageJSON('typebox', pathToFileURL(join(sdk.getPackageDir(), 'package.json')));
 assert.equal(JSON.parse(readFileSync(typeboxPackage, 'utf8')).version, '1.3.27');
 const aiPackage = findPackageJSON('@earendil-works/pi-ai/compat', pathToFileURL(join(sdk.getPackageDir(), 'package.json')));
 const aiManifest = JSON.parse(readFileSync(aiPackage, 'utf8'));
-assert.equal(aiManifest.version, '0.99.0');
+assert.equal(aiManifest.version, '1.0.0');
 const aiUrl = pathToFileURL(join(dirname(aiPackage), aiManifest.exports['./compat'].import)).href;
 const ai = await import(aiUrl);
 const { fauxProvider, fauxAssistantMessage, fauxToolCall, getCurrentTools } = ai;
 
-test('0.99: load, declarations, native nested validation/results, refresh and shutdown', { timeout: 30000 }, async () => {
-  assert.equal(JSON.parse(readFileSync(join(sdk.getPackageDir(), 'package.json'), 'utf8')).version, '0.99.0');
+test('1.0: load, declarations, native nested validation/results, refresh and shutdown', { timeout: 30000 }, async () => {
+  assert.equal(JSON.parse(readFileSync(join(sdk.getPackageDir(), 'package.json'), 'utf8')).version, '1.0.0');
   if (manifest.name === 'pi-namespace') writeFileSync(join(root, '.pi/namespace.json'), JSON.stringify({ builtinNamespace: 'fs', separator: '__' }));
   const settingsManager = sdk.SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false }, defaultTools: ['+codemode'] });
-  const faux = fauxProvider({ provider: 'pi99-offline', api: 'pi99-offline-api', models: [{ id: 'test', name: 'Offline test', reasoning: false }], tokenSize: { min: 100, max: 100 } });
+  const faux = fauxProvider({ provider: 'pi1-offline', api: 'pi1-offline-api', models: [{ id: 'test', name: 'Offline test', reasoning: false }], tokenSize: { min: 100, max: 100 } });
   const modelRuntime = await sdk.ModelRuntime.create({ authPath: join(agentDir, 'auth.json'), modelsPath: null, refreshOnCreate: false });
   modelRuntime.registerNativeProvider(faux.provider);
   await modelRuntime.refresh({ allowNetwork: false });
   const identityPath = join(root, 'identity.ts');
-  globalThis[Symbol.for('pi99.host.identity')] = { AgentSession: sdk.AgentSession, Type: ai.Type };
+  globalThis[Symbol.for('pi1.host.identity')] = { AgentSession: sdk.AgentSession, Type: ai.Type };
   writeFileSync(identityPath, `import { AgentSession } from '@earendil-works/pi-coding-agent';
 import { Type } from '@earendil-works/pi-ai';
 import { Type as TypeboxType } from 'typebox';
 export default function () {
- const expected = globalThis[Symbol.for('pi99.host.identity')];
+ const expected = globalThis[Symbol.for('pi1.host.identity')];
  if (AgentSession !== expected.AgentSession || Type !== TypeboxType) throw new Error('Duplicate host module identity');
 }`);
   const lazyPath = join(root, 'lazy.ts');
   writeFileSync(lazyPath, `import { AgentSession } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 export default function(pi) {
- if (AgentSession !== globalThis[Symbol.for('pi99.host.identity')].AgentSession) throw new Error('Lazy duplicate host SDK');
- globalThis[Symbol.for('pi99.lazy.factories')] = (globalThis[Symbol.for('pi99.lazy.factories')] ?? 0) + 1;
+ if (AgentSession !== globalThis[Symbol.for('pi1.host.identity')].AgentSession) throw new Error('Lazy duplicate host SDK');
+ globalThis[Symbol.for('pi1.lazy.factories')] = (globalThis[Symbol.for('pi1.lazy.factories')] ?? 0) + 1;
  for (const exposure of ['codemode', 'deferred']) pi.registerTool({ name: 'lazy_' + exposure, label: 'Lazy', description: exposure, exposure, parameters: Type.Object({}), execute: async () => ({ content: [{ type: 'text', text: 'lazy' }], details: undefined }) });
 }`);
-  writeFileSync(join(root, 'lazy-extensions.json'), JSON.stringify({ version: 1, extensions: [{ name: 'lazy', path: lazyPath }], settings: { idleTimeout: 0.001 } }));
+  const esmPath = join(root, 'lazy-esm.mjs');
+  writeFileSync(esmPath, `import { AgentSession } from '@earendil-works/pi-coding-agent';
+export default function () {
+ if (AgentSession !== globalThis[Symbol.for('pi1.host.identity')].AgentSession) throw new Error('Lazy ESM duplicate host');
+ globalThis[Symbol.for('pi1.lazy.esm')] = true;
+}`);
+  writeFileSync(join(root, 'lazy-extensions.json'), JSON.stringify({ version: 1, extensions: [{ name: 'lazy', path: lazyPath }, { name: 'esm', path: esmPath }], settings: { idleTimeout: 0.001 } }));
   const events = [], calls = [], errors = [];
   let api;
   const readName = manifest.name === 'pi-namespace' ? 'fs__read' : 'read';
@@ -90,7 +96,7 @@ export default function(pi) {
   try {
     await loader.reload();
     assert.deepEqual(loader.getExtensions().errors, []);
-    ({ session } = await sdk.createAgentSession({ cwd: root, agentDir, modelRuntime, model: modelRuntime.getModel('pi99-offline', 'test'), resourceLoader: loader, settingsManager, sessionManager: sdk.SessionManager.inMemory(root) }));
+    ({ session } = await sdk.createAgentSession({ cwd: root, agentDir, modelRuntime, model: modelRuntime.getModel('pi1-offline', 'test'), resourceLoader: loader, settingsManager, sessionManager: sdk.SessionManager.inMemory(root) }));
     session.extensionRunner.onError(e => errors.push(e));
     await session.bindExtensions({});
     const registered = loader.getExtensions().extensions;
@@ -136,8 +142,10 @@ export default function(pi) {
       assert.equal(session.getLastAssistantText(), 'continued');
       assert.equal(session.messages.filter(m => m.role === 'user').length, users);
     }
+    await session.prompt('/ext activate esm');
+    assert.equal(globalThis[Symbol.for('pi1.lazy.esm')], true, 'native ESM also uses host-mapped constructors');
     await session.prompt('/ext activate lazy');
-    assert.equal(globalThis[Symbol.for('pi99.lazy.factories')], 1);
+    assert.equal(globalThis[Symbol.for('pi1.lazy.factories')], 1);
     for (const name of ['lazy_codemode', 'lazy_deferred']) {
       assert(session.getCallableToolNames().includes(name));
       assert(!session.getActiveToolNames().includes(name));
@@ -145,7 +153,7 @@ export default function(pi) {
     await new Promise(resolve => setTimeout(resolve, 100));
     for (const name of ['lazy_codemode', 'lazy_deferred']) assert(!session.getCallableToolNames().includes(name), 'idle withdrawal removes callable-only tools');
     await session.prompt('/ext activate lazy');
-    assert.equal(globalThis[Symbol.for('pi99.lazy.factories')], 1, 'reactivation must not rerun the factory');
+    assert.equal(globalThis[Symbol.for('pi1.lazy.factories')], 1, 'reactivation must not rerun the factory');
     for (const name of ['lazy_codemode', 'lazy_deferred']) {
       assert(session.getCallableToolNames().includes(name));
       assert(!session.getActiveToolNames().includes(name), 'restore original exposure, not direct activation');
@@ -157,7 +165,7 @@ export default function(pi) {
     assert.throws(() => api.getActiveTools(), /stale|inactive|invalid/i);
     await loader.reload();
     assert.deepEqual(loader.getExtensions().errors, []);
-    ({ session } = await sdk.createAgentSession({ cwd: root, agentDir, modelRuntime, model: modelRuntime.getModel('pi99-offline', 'test'), resourceLoader: loader, settingsManager, sessionManager: sdk.SessionManager.inMemory(root) }));
+    ({ session } = await sdk.createAgentSession({ cwd: root, agentDir, modelRuntime, model: modelRuntime.getModel('pi1-offline', 'test'), resourceLoader: loader, settingsManager, sessionManager: sdk.SessionManager.inMemory(root) }));
     await session.bindExtensions({});
     assert(session.getActiveToolNames().includes(readName), 'reload preserves the loadout');
     assert(!session.getActiveToolNames().includes('probe_echo'));

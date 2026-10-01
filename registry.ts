@@ -2,12 +2,14 @@
  * Extension registry - loads and tracks lazy extensions.
  *
  * This is the core of pi-lazy-extensions. It handles:
- * - Dynamic loading of extensions via jiti (or import()) + factory(pi)
+ * - Dynamic loading of extensions via host-mapped jiti + factory(pi)
  * - Tracking registered tools/commands per extension
  * - Idle timeout unloading
  * - Deduplication guards
  */
 
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ActivationResult, LazyExtensionsState } from "./types.js";
 import { resolveExtensionPath } from "./config.js";
@@ -157,38 +159,38 @@ async function performActivation(
   const definitions = new Map<string, Parameters<ExtensionAPI["registerTool"]>[0]>();
   const interceptedEvents: string[] = [];
 
-  const origRegisterShortcut = (pi as any).registerShortcut?.bind(pi);
-  const origRegisterFlag = (pi as any).registerFlag?.bind(pi);
-  const origRegisterMessageRenderer = (pi as any).registerMessageRenderer?.bind(pi);
-  const origRegisterTool = pi.registerTool.bind(pi);
-  const origOn = pi.on.bind(pi);
+  const origRegisterShortcut = (pi as any).registerShortcut;
+  const origRegisterFlag = (pi as any).registerFlag;
+  const origRegisterMessageRenderer = (pi as any).registerMessageRenderer;
+  const origRegisterTool = pi.registerTool;
+  const origOn = pi.on;
 
   (pi as any).registerShortcut = (shortcut: string, options: any) => {
     interceptedShortcuts.push(shortcut);
-    origRegisterShortcut?.(shortcut, options);
+    origRegisterShortcut?.call(pi, shortcut, options);
   };
   (pi as any).registerFlag = (flagName: string, options: any) => {
     interceptedFlags.push(flagName);
-    origRegisterFlag?.(flagName, options);
+    origRegisterFlag?.call(pi, flagName, options);
   };
   (pi as any).registerMessageRenderer = (customType: string, renderer: any) => {
     interceptedRenderers.push(customType);
-    origRegisterMessageRenderer?.(customType, renderer);
+    origRegisterMessageRenderer?.call(pi, customType, renderer);
   };
   pi.registerTool = (tool: any) => {
     interceptedTools.push(tool.name);
-    // Lazy factories share our API owner. In 0.99 re-registering would replace
+    // Lazy factories share our API owner. In 1.0 re-registering would replace
     // that owner's tool, not silently lose a collision; preserve existing tools.
     if (toolsBefore.has(tool.name)) return;
     definitions.set(tool.name, tool);
-    origRegisterTool(tool);
+    origRegisterTool.call(pi, tool);
   };
   // 0.86.0: pi.on returns an unsubscribe function and its event name is a
   // closed overload set, so the generic string-typed proxy is asserted to
   // ExtensionAPI["on"]. The `never` cast lets the bound overload set resolve.
   pi.on = ((event: string, handler: any) => {
     interceptedEvents.push(event);
-    return origOn(event as never, handler);
+    return origOn.call(pi, event as never, handler);
   }) as ExtensionAPI["on"];
 
   const extPath = resolveExtensionPath(extState.config.path, state.baseDir);
@@ -299,8 +301,8 @@ export function resetJitiAliases(): void { hostModules = undefined; }
 /**
  * Load an extension module and extract its default factory function.
  *
- * Tries jiti first (for TypeScript support and module alias resolution),
- * then falls back to raw import() for .js files or when jiti is unavailable.
+ * Jiti is required for both JS and TS. Never retry a failed evaluation with
+ * native import: it can execute side effects twice and bypass host mapping.
  *
  * Jiti receives the same live module objects as Pi's own extension loader,
  * so lazy imports preserve class identity in both SDK and bundled CLI hosts.
@@ -308,30 +310,22 @@ export function resetJitiAliases(): void { hostModules = undefined; }
 async function loadExtensionFactory(
   extPath: string,
 ): Promise<((pi: ExtensionAPI) => void | Promise<void>) | undefined> {
-  // Attempt 1: jiti — handles .ts and provides SDK-compatible module aliases
-  try {
-    const { createJiti } = await import("jiti");
-    const jiti = createJiti(import.meta.url, {
-      moduleCache: false,
-      virtualModules: getHostModules(),
-      tryNative: false,
-    });
-    const mod = await jiti.import(extPath, { default: true });
-    if (typeof mod === "function") {
-      return mod as (pi: ExtensionAPI) => void | Promise<void>;
-    }
-    if (typeof (mod as any)?.default === "function") {
-      return (mod as any).default as (pi: ExtensionAPI) => void | Promise<void>;
-    }
-    return undefined;
-  } catch {
-    // jiti unavailable or failed — fall through to raw import
-  }
-
-  // Attempt 2: raw import() — works for .js files, no TypeScript support
-  const mod = await import(extPath);
-  if (typeof mod.default === "function") {
-    return mod.default as (pi: ExtensionAPI) => void | Promise<void>;
+  const { createJiti } = await import("jiti");
+  const jiti = createJiti(import.meta.url, {
+    moduleCache: false,
+    virtualModules: getHostModules(),
+    tryNative: false,
+  });
+  // Jiti 2.7 treats .mjs (and type:module .js) as native even with
+  // tryNative:false. Force the entrypoint through its mapped evaluator so
+  // bundled hosts never patch a second SDK and evaluation errors are not retried.
+  const filename = fileURLToPath(jiti.esmResolve(extPath));
+  const mod = await jiti.evalModule(await readFile(filename, "utf8"), {
+    filename, async: true, forceTranspile: true,
+  });
+  if (typeof mod === "function") return mod as (pi: ExtensionAPI) => void | Promise<void>;
+  if (typeof (mod as any)?.default === "function") {
+    return (mod as any).default as (pi: ExtensionAPI) => void | Promise<void>;
   }
   return undefined;
 }
@@ -426,7 +420,7 @@ function idleUnloadExtension(name: string, state: LazyExtensionsState, pi: Exten
   const activeTools = pi.getActiveTools();
   extState.activeBeforeUnload = activeTools.filter(t => extState.registeredTools.includes(t));
   const remaining = activeTools.filter(t => !extState.registeredTools.includes(t));
-  // Removing an active name does not withdraw codemode/deferred tools in 0.99.
+  // Removing an active name does not withdraw codemode/deferred tools in 1.0.
   // Hidden exposure also removes them from ctx.tools / native nested dispatch.
   for (const definition of extState.toolDefinitions ?? []) {
     if (definition.exposure === "codemode" || definition.exposure === "deferred") {
